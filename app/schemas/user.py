@@ -67,3 +67,9 @@ class UserLogin(BaseModel):
     """Schema for authentication credentials."""
     email: EmailStr = Field(..., description="User login email")
     password: str = Field(..., description="User login password")
+
+
+class Token(BaseModel):
+    """Schema for authentication token response."""
+    access_token: str = Field(..., description="JWT access token")
+    token_type: str = Field(default="bearer", description="Token type")

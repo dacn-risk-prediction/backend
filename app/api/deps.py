@@ -13,6 +13,6 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
-
+1
 
 SessionDep = Annotated[Session, Depends(get_db)]
