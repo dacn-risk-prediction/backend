@@ -26,23 +26,6 @@ class Student(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=True,
     )
-    family_income: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    financial_pressure: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    living_condition: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    discipline: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    motivation: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    stress: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    social_activity: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    academic_level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    math_level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    english_level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    english_pass: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text("false"))
-    english_eligibility_by_semester: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    ctxh_days_by_semester: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    voluntary_dropout_semester: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    voluntary_dropout_reason: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    base_score: Mapped[Optional[float]] = mapped_column(Double(53), nullable=True)
-    early_graduation_candidate: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text("false"))
 
     user: Mapped[Optional["User"]] = relationship(
         "User",

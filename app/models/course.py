@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Double, ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -16,7 +16,6 @@ class Course(Base):
     course_code: Mapped[str] = mapped_column(String(20), primary_key=True)
     course_name: Mapped[str] = mapped_column(String(255), nullable=False)
     credits: Mapped[int] = mapped_column(Integer, nullable=False)
-    difficulty: Mapped[Optional[float]] = mapped_column(Double(53), nullable=True)
 
     prerequisites: Mapped[list["CoursePrerequisite"]] = relationship(
         "CoursePrerequisite",
