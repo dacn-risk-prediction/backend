@@ -1,0 +1,103 @@
+# Alembic Database Migrations
+
+The `alembic/` directory contains all configuration files and historical migration scripts (Database Migrations) for this backend project.
+
+It seamlessly bridges the SQLAlchemy models defined in [`app/models/`](../app/models) with the PostgreSQL database (Neon Cloud or local Docker) using the centralized metadata imported in [`app/db/base.py`](../app/db/base.py).
+
+---
+
+## 1. Directory Structure
+
+```text
+alembic/
+├── env.py              # Migration environment runner; dynamically loads DATABASE_URL from .env and Base.metadata
+├── script.py.mako      # Template for generating new migration version scripts
+├── versions/           # Contains migration version scripts (e.g. 0750f892b76c_initial_neon_schema.py)
+└── README              # Documentation and operational guide for migrations
+```
+
+---
+
+## 2. Common Alembic Commands
+
+> **Note:** Run all commands from the project root directory (`backend/`) with your virtual environment activated.
+
+### 📌 Database Status Inspection
+- **Check current applied revision of the database:**
+  ```bash
+  ./.venv/bin/alembic current
+  ```
+- **View complete migration history:**
+  ```bash
+  ./.venv/bin/alembic history --verbose
+  ```
+
+---
+
+### 🚀 Creating New Migrations
+When adding new models, modifying column types, or adding indexes in `app/models/`:
+- **Auto-generate migration script by comparing models against current database:**
+  ```bash
+  ./.venv/bin/alembic revision --autogenerate -m "describe_changes_here"
+  ```
+- **Create an empty migration script (for custom/manual SQL):**
+  ```bash
+  ./.venv/bin/alembic revision -m "manual_custom_migration"
+  ```
+
+---
+
+### ⚡ Applying Migrations (Upgrade)
+- **Upgrade database to the latest version:**
+  ```bash
+  ./.venv/bin/alembic upgrade head
+  ```
+- **Upgrade by one version step:**
+  ```bash
+  ./.venv/bin/alembic upgrade +1
+  ```
+- **Generate raw SQL statements without executing against DB (Dry-run review):**
+  ```bash
+  ./.venv/bin/alembic upgrade head --sql
+  ```
+
+---
+
+### ⏪ Rolling Back Migrations (Downgrade)
+- **Roll back by one version step:**
+  ```bash
+  ./.venv/bin/alembic downgrade -1
+  ```
+- **Revert all migrations back to the initial blank baseline:**
+  ```bash
+  ./.venv/bin/alembic downgrade base
+  ```
+
+---
+
+### 🏷️ Version Stamping (Stamp without running SQL)
+Used when a database already contains the required tables (e.g., existing tables in Neon or pre-restored dump) and you only need to sync the migration version without running `CREATE TABLE`:
+- **Stamp database at the latest revision:**
+  ```bash
+  ./.venv/bin/alembic stamp head
+  ```
+- **Stamp database at a specific revision ID:**
+  ```bash
+  ./.venv/bin/alembic stamp <revision_id>
+  ```
+
+---
+
+## 3. Standard Migration Workflow
+
+1. **Modify Models:** Add or update model classes in `app/models/*.py`.
+2. **Register Models:** Ensure the new model is imported into `app/db/base.py` and exported in `app/models/__init__.py`.
+3. **Generate Migration:**
+   ```bash
+   ./.venv/bin/alembic revision --autogenerate -m "add_table_or_column"
+   ```
+4. **Review Generated File:** Inspect the generated script inside `alembic/versions/` to verify operations in both `upgrade()` and `downgrade()`.
+5. **Apply Changes:**
+   ```bash
+   ./.venv/bin/alembic upgrade head
+   ```
