@@ -1,7 +1,7 @@
 import uuid
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.deps import SessionDep
+from app.api.deps import CurrentUser, SessionDep
 from app.core.security import get_password_hash
 from app.repositories import user_repo
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
@@ -54,6 +54,17 @@ def create_user(user_in: UserCreate, db: SessionDep):
         )
     hashed_password = get_password_hash(user_in.password)
     return user_repo.create(db, obj_in=user_in, password_hash=hashed_password)
+
+
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get current authenticated user profile",
+)
+def get_user_me(current_user: CurrentUser):
+    """Retrieve profile of the currently authenticated user."""
+    return current_user
 
 
 @router.get(

@@ -19,6 +19,7 @@ You are a Staff Python Backend Engineer specializing in FastAPI, SQLAlchemy and 
 | Validation / settings | Pydantic v2 + `pydantic-settings` |
 | HTTP client (to AI service) | `httpx` (async) |
 | Package manager | `uv`. Always suggest `uv add` or `uv pip install`, never plain `pip install` |
+| Auth / Security | `PyJWT` + `pwdlib[bcrypt]` (or `bcrypt`). Never use deprecated `python-jose` or `passlib` |
 
 ## Directory Structure
 
@@ -88,6 +89,27 @@ app/
 - All communication with the AI Model service (risk prediction, SHAP/LIME explanations, counterfactuals, What-if simulations) goes through `app/services/model_client.py`.
 - Use `httpx.AsyncClient` with explicit timeouts and error handling.
 - If the AI service is down or times out, raise `HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)`.
+
+### 7. Authentication & RBAC (`app/core/security.py` & `app/api/deps.py`)
+
+- **Libraries & Hashing:** Use `PyJWT` (`import jwt`) for JWT encoding/decoding and `pwdlib` (or `bcrypt`) for password hashing. Never use unmaintained `python-jose` or `passlib`.
+- **Dual-Token Architecture:**
+  - **Access Token:** Short-lived (e.g. `ACCESS_TOKEN_EXPIRE_MINUTES = 30`), sent via `Authorization: Bearer <token>` (`OAuth2PasswordBearer`).
+  - **Refresh Token:** Long-lived (e.g. `REFRESH_TOKEN_EXPIRE_DAYS = 7`), used exclusively at `POST /api/v1/auth/refresh` to rotate/issue new tokens.
+- **Strict Token Payload & Type Separation:**
+  - Payload must include `sub` (str user ID), `role` (`lecturer` | `student`), `type` (`access` | `refresh`), `iat`, and timezone-aware `exp` (`datetime.now(timezone.utc)`).
+  - **Prevent Token Confusion:** `get_current_user` MUST enforce `payload.get("type") == "access"`. The refresh endpoint MUST enforce `payload.get("type") == "refresh"` and verify the user is still active in the DB before issuing a new token pair.
+- **RBAC & Ownership Dependency Chaining (`app/api/deps.py`):**
+  - Define reusable role dependencies using `Annotated`:
+    ```python
+    CurrentUser = Annotated[User, Depends(get_current_user)]
+    CurrentLecturer = Annotated[User, Depends(get_current_lecturer)]
+    CurrentStudent = Annotated[User, Depends(get_current_student)]
+    ```
+  - **Resource Ownership:** Chain dependencies to verify access rights before route execution. Lecturers can only access classes they teach and students enrolled in those classes; Students can only access their own records and What-if simulations.
+  - Raise `401 Unauthorized` (with `WWW-Authenticate: Bearer` header) for invalid/expired tokens, and `403 Forbidden` for insufficient role permissions or ownership violations.
+
+
 
 ## Conventions
 

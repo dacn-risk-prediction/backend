@@ -71,5 +71,18 @@ class UserLogin(BaseModel):
 
 class Token(BaseModel):
     """Schema for authentication token response."""
-    access_token: str = Field(..., description="JWT access token")
+    access_token: str = Field(..., description="Short-lived JWT access token")
+    refresh_token: str = Field(..., description="Long-lived JWT refresh token")
     token_type: str = Field(default="bearer", description="Token type")
+
+
+class TokenRefreshRequest(BaseModel):
+    """Schema for requesting a new token pair via refresh token."""
+    refresh_token: str = Field(..., description="Valid long-lived JWT refresh token")
+
+
+class TokenPayload(BaseModel):
+    """Schema representing decoded JWT claims."""
+    sub: str | None = None
+    role: str | None = None
+    type: str | None = None

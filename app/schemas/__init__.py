@@ -42,6 +42,9 @@ from app.schemas.student import (
     StudentUpdate,
 )
 from app.schemas.user import (
+    Token,
+    TokenPayload,
+    TokenRefreshRequest,
     UserBase,
     UserCreate,
     UserLogin,
@@ -87,7 +90,10 @@ __all__ = [
     "StudentDetailResponse",
     "StudentResponse",
     "StudentUpdate",
-    # User
+    # User & Auth
+    "Token",
+    "TokenPayload",
+    "TokenRefreshRequest",
     "UserBase",
     "UserCreate",
     "UserLogin",

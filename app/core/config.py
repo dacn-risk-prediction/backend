@@ -8,10 +8,11 @@ class Settings(BaseSettings):
     # PostgreSQL (Neon) synchronous database URL
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/risk_warning_db"
 
-    # Security & Auth
+    # Security & Auth (Dual-Token Architecture)
     SECRET_KEY: str = "capstone_super_secret_jwt_key_change_in_production_2026"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 1 day
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # 30 minutes short-lived access token
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7    # 7 days long-lived refresh token
 
     # CORS origins for Frontend
     BACKEND_CORS_ORIGINS: list[str] = [
