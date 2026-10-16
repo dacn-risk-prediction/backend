@@ -57,3 +57,27 @@ class StudentDetailResponse(StudentResponse):
     user: UserResponse | None = Field(default=None, description="Detailed user information")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SemesterGpaItem(BaseModel):
+    """Per-semester GPA and credit performance breakdown."""
+    semester_code: str = Field(..., description="Semester code identifier", examples=["HK131"])
+    gpa: float = Field(..., ge=0.0, le=4.0, description="Weighted GPA of all classes in this semester", examples=[2.09])
+    semester_gpa: float = Field(..., ge=0.0, le=4.0, description="Alias for semester GPA", examples=[2.09])
+    attempted_credits: int = Field(..., ge=0, description="Total credits registered in semester", examples=[16])
+    passed_credits: int = Field(..., ge=0, description="Total credits passed in semester", examples=[16])
+    courses_count: int = Field(..., ge=0, description="Number of courses taken in semester", examples=[6])
+
+
+class StudentAcademicSummaryResponse(BaseModel):
+    """Overall academic summary including Cumulative GPA, credits, and semester history."""
+    student_id: str = Field(..., description="Student identification code", examples=["1316593"])
+    cumulative_gpa: float = Field(..., ge=0.0, le=4.0, description="Cumulative GPA across all passed courses", examples=[2.38])
+    total_passed_credits: int = Field(..., ge=0, description="Total accumulated degree credits", examples=[127])
+    total_attempted_credits: int = Field(..., ge=0, description="Total attempted credits across all terms", examples=[127])
+    passed_courses_count: int = Field(..., ge=0, description="Total number of passed courses", examples=[44])
+    failed_courses_count: int = Field(..., ge=0, description="Total number of failed courses", examples=[0])
+    semester_gpas: list[SemesterGpaItem] = Field(
+        default_factory=list,
+        description="Chronological semester-by-semester GPA performance records",
+    )

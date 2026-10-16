@@ -82,7 +82,9 @@ backend/
 │   └── main.py              # Application entrypoint & CORS middleware
 ├── .env.example             # Template for environment variables
 ├── alembic.ini              # Alembic root configuration
-├── requirements.txt         # Frozen Python dependencies
+├── pyproject.toml           # Project metadata & declared dependencies
+├── uv.lock                  # Deterministic locked dependencies
+├── API_SPECIFICATION.MD     # Full frontend API specification & TypeScript DTOs
 └── README.MD                # Project documentation
 ```
 
@@ -92,7 +94,7 @@ backend/
 
 | Component | Technology | Description |
 |---|---|---|
-| **Language** | Python 3.10+ | Modern type hinting (`Annotated`, `list[str]`, `str \| None`) |
+| **Language** | Python 3.11+ | Modern type hinting (`Annotated`, `list[str]`, `str \| None`) |
 | **Framework** | FastAPI | High-performance asynchronous API framework |
 | **Server** | Uvicorn | Lightning-fast ASGI server |
 | **Database** | PostgreSQL | Serverless Neon PostgreSQL (Cloud) or Local Docker |
@@ -100,15 +102,15 @@ backend/
 | **Migrations** | Alembic | Automatic schema versioning and change tracking |
 | **Validation** | Pydantic v2 | High-speed data serialization and validation |
 | **Security** | bcrypt & PyJWT | Robust password hashing and JWT access token issuance |
-| **Package Manager**| `uv` | Ultra-fast Python package installer and resolver |
+| **Package Manager**| `uv` | Modern ultra-fast Python package & project manager |
 
 ---
 
 ## 4. Local Development Guide
 
 ### Prerequisites
-- **Python 3.10+** (Tested on Python 3.14)
-- **uv** (Recommended package manager) or standard `pip`
+- **Python 3.11+** (Tested on Python 3.14)
+- **uv** (Recommended package and environment manager — [install guide](https://docs.astral.sh/uv/getting-started/installation/))
 - **PostgreSQL** (Docker or Neon Cloud instance)
 
 ---
@@ -125,15 +127,17 @@ cd backend
 
 Using `uv` (recommended):
 ```bash
-# Create virtual environment
-uv venv
-
-# Activate virtual environment
-source .venv/bin/activate
-
-# Install all dependencies
-uv pip install -r requirements.txt
+# Automatically creates .venv and syncs all locked dependencies from uv.lock
+uv sync
 ```
+
+> [!TIP]
+> With `uv`, you don't need to manually activate `.venv`. Prefixing your commands with `uv run` automatically runs them inside the managed virtual environment.
+>
+> If you prefer manual activation, you can still activate it normally:
+> ```bash
+> source .venv/bin/activate
+> ```
 
 ---
 
@@ -168,17 +172,17 @@ Apply database migrations to sync your database with the current models:
 
 ```bash
 # Apply migrations to the latest revision
-alembic upgrade head
+uv run alembic upgrade head
 
 # Verify current database migration state
-alembic current
+uv run alembic current
 ```
 
 > [!NOTE]
 > If using a fresh local Docker PostgreSQL container:
 > ```bash
 > docker run --name local-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=risk_warning_db -p 5432:5432 -d postgres:16
-> alembic upgrade head
+> uv run alembic upgrade head
 > ```
 
 ---
@@ -188,7 +192,7 @@ alembic current
 Start the application with hot-reloading:
 
 ```bash
-uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 The server will start at `http://127.0.0.1:8000`.
@@ -200,6 +204,7 @@ The server will start at `http://127.0.0.1:8000`.
 FastAPI generates automated, interactive API documentation:
 - **Swagger UI (Interactive Docs)**: [http://localhost:8000/docs](http://localhost:8000/docs)
 - **ReDoc (Alternative Docs)**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+- **Frontend Integration Guide**: [`API_SPECIFICATION.MD`](API_SPECIFICATION.MD)
 - **Health Check Endpoint**: [http://localhost:8000/health](http://localhost:8000/health)
 
 ### Summary of Registered Endpoints
@@ -211,6 +216,7 @@ FastAPI generates automated, interactive API documentation:
 | **Users** | `GET`, `PUT`, `DELETE` | `/api/v1/users/{user_id}` | Manage single user profile |
 | **Students** | `GET`, `POST` | `/api/v1/students/` | List students (cohort/major filter) or create |
 | **Students** | `GET`, `PUT`, `DELETE` | `/api/v1/students/{student_id}` | Get detailed profile with linked user account |
+| **Students** | `GET` | `/api/v1/students/{student_id}/summary` | Cumulative GPA, credits & per-semester GPA history |
 | **Lecturers** | `GET`, `POST` | `/api/v1/lecturers/` | List lecturers (department filter) or create |
 | **Lecturers** | `GET`, `PUT`, `DELETE` | `/api/v1/lecturers/{lecturer_id}` | Manage lecturer record |
 | **Courses** | `GET`, `POST` | `/api/v1/courses/` | List courses (search/pagination) or create |

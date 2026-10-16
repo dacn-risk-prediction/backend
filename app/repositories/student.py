@@ -128,5 +128,45 @@ class StudentRepository:
             db.commit()
         return db_obj
 
+    def calculate_cumulative_gpa(
+        self,
+        db: Session,
+        *,
+        student_id: str,
+        up_to_semester: str | None = None,
+        only_passed: bool = True,
+    ) -> float:
+        """Calculate Cumulative GPA for a student via enrollment records."""
+        from app.repositories.enrollment import enrollment_repo
+
+        return enrollment_repo.calculate_cumulative_gpa(
+            db,
+            student_id=student_id,
+            up_to_semester=up_to_semester,
+            only_passed=only_passed,
+        )
+
+    def get_academic_summary(
+        self,
+        db: Session,
+        *,
+        student_id: str,
+    ) -> dict[str, Any]:
+        """Fetch cumulative academic metrics for a student."""
+        from app.repositories.enrollment import enrollment_repo
+
+        return enrollment_repo.get_academic_summary(db, student_id=student_id)
+
+    def get_semester_gpa_history(
+        self,
+        db: Session,
+        *,
+        student_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch chronological term and cumulative GPA history for each semester studied."""
+        from app.repositories.enrollment import enrollment_repo
+
+        return enrollment_repo.get_semester_gpa_history(db, student_id=student_id)
+
 
 student_repo = StudentRepository()

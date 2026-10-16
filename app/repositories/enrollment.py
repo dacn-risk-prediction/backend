@@ -4,6 +4,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.models.course import Course
 from app.models.enrollment import Enrollment
 from app.schemas.enrollment import EnrollmentCreate, EnrollmentUpdate
 
@@ -183,6 +184,208 @@ class EnrollmentRepository:
             db.delete(db_obj)
             db.commit()
         return db_obj
+
+    def calculate_cumulative_gpa(
+        self,
+        db: Session,
+        *,
+        student_id: str,
+        up_to_semester: str | None = None,
+        only_passed: bool = True,
+    ) -> float:
+        """Calculate weighted Cumulative GPA (4.0 scale) for a student.
+
+        Formula: sum(course_gpa * credits) / sum(credits)
+        By default, only_passed=True aligns with academic degree credit calculation,
+        where only successfully completed courses count toward cumulative GPA.
+        """
+        statement = (
+            select(
+                Enrollment.gpa_4,
+                Course.credits,
+            )
+            .join(Course, Enrollment.course_code == Course.course_code)
+            .where(
+                Enrollment.student_id == student_id,
+                Enrollment.gpa_4.isnot(None),
+                Course.credits > 0,
+            )
+        )
+
+        if up_to_semester:
+            statement = statement.where(Enrollment.semester_code <= up_to_semester)
+
+        if only_passed:
+            statement = statement.where(Enrollment.passed.is_(True))
+
+        records = db.execute(statement).all()
+        if not records:
+            return 0.0
+
+        total_points = sum(gpa * creds for gpa, creds in records)
+        total_credits = sum(creds for _, creds in records)
+
+        if total_credits == 0:
+            return 0.0
+
+        return round(total_points / total_credits, 2)
+
+    def calculate_semester_gpa(
+        self,
+        db: Session,
+        *,
+        student_id: str,
+        semester_code: str,
+    ) -> float:
+        """Calculate weighted Semester GPA (4.0 scale) for a specific term.
+
+        Formula: sum(course_gpa * credits) / sum(credits) for courses in that semester.
+        Includes all graded courses taken in the semester (both passed and failed).
+        """
+        statement = (
+            select(
+                Enrollment.gpa_4,
+                Course.credits,
+            )
+            .join(Course, Enrollment.course_code == Course.course_code)
+            .where(
+                Enrollment.student_id == student_id,
+                Enrollment.semester_code == semester_code,
+                Enrollment.gpa_4.isnot(None),
+                Course.credits > 0,
+            )
+        )
+
+        records = db.execute(statement).all()
+        if not records:
+            return 0.0
+
+        total_points = sum(gpa * creds for gpa, creds in records)
+        total_credits = sum(creds for _, creds in records)
+
+        if total_credits == 0:
+            return 0.0
+
+        return round(total_points / total_credits, 2)
+
+    def get_academic_summary(
+        self,
+        db: Session,
+        *,
+        student_id: str,
+    ) -> dict[str, Any]:
+        """Generate a complete academic performance summary for a student.
+
+        Includes Cumulative GPA, total attempted credits, total passed credits,
+        and course completion counts.
+        """
+        statement = (
+            select(
+                Enrollment.gpa_4,
+                Enrollment.passed,
+                Course.credits,
+            )
+            .join(Course, Enrollment.course_code == Course.course_code)
+            .where(
+                Enrollment.student_id == student_id,
+                Course.credits > 0,
+            )
+        )
+
+        records = db.execute(statement).all()
+
+        total_attempted_credits = 0
+        total_passed_credits = 0
+        weighted_passed_points = 0.0
+        passed_count = 0
+        failed_count = 0
+
+        for gpa_4, passed, credits in records:
+            total_attempted_credits += credits
+            if passed:
+                total_passed_credits += credits
+                passed_count += 1
+                if gpa_4 is not None:
+                    weighted_passed_points += gpa_4 * credits
+            elif passed is False:
+                failed_count += 1
+
+        cumulative_gpa = (
+            round(weighted_passed_points / total_passed_credits, 2)
+            if total_passed_credits > 0
+            else 0.0
+        )
+
+        return {
+            "student_id": student_id,
+            "cumulative_gpa": cumulative_gpa,
+            "total_passed_credits": total_passed_credits,
+            "total_attempted_credits": total_attempted_credits,
+            "passed_courses_count": passed_count,
+            "failed_courses_count": failed_count,
+        }
+
+    def get_semester_gpa_history(
+        self,
+        db: Session,
+        *,
+        student_id: str,
+    ) -> list[dict[str, Any]]:
+        """Compute chronological term GPA and cumulative GPA progression for each semester attended."""
+        statement = (
+            select(
+                Enrollment.semester_code,
+                Enrollment.course_code,
+                Enrollment.gpa_4,
+                Enrollment.passed,
+                Course.credits,
+            )
+            .join(Course, Enrollment.course_code == Course.course_code)
+            .where(Enrollment.student_id == student_id)
+            .order_by(Enrollment.semester_code)
+        )
+
+        records = db.execute(statement).all()
+        if not records:
+            return []
+
+        # Group enrollments by semester
+        semesters_data: dict[str, list[Any]] = {}
+        for record in records:
+            sem_code = record.semester_code
+            if sem_code not in semesters_data:
+                semesters_data[sem_code] = []
+            semesters_data[sem_code].append(record)
+
+        history: list[dict[str, Any]] = []
+
+        for sem_code in sorted(semesters_data.keys()):
+            sem_records = semesters_data[sem_code]
+
+            # Attempted and passed credits for this semester
+            attempted_credits = sum(r.credits for r in sem_records if r.credits > 0)
+            passed_credits = sum(r.credits for r in sem_records if r.passed and r.credits > 0)
+
+            # GPA of all classes/courses taken in this semester
+            graded_records = [r for r in sem_records if r.gpa_4 is not None and r.credits > 0]
+            term_points = sum(r.gpa_4 * r.credits for r in graded_records)
+            term_graded_credits = sum(r.credits for r in graded_records)
+            semester_gpa = (
+                round(term_points / term_graded_credits, 2)
+                if term_graded_credits > 0
+                else 0.0
+            )
+
+            history.append({
+                "semester_code": sem_code,
+                "gpa": semester_gpa,
+                "semester_gpa": semester_gpa,
+                "attempted_credits": attempted_credits,
+                "passed_credits": passed_credits,
+                "courses_count": len(sem_records),
+            })
+
+        return history
 
 
 enrollment_repo = EnrollmentRepository()

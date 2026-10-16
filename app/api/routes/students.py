@@ -3,11 +3,13 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.api.deps import SessionDep
 from app.repositories import student_repo
 from app.schemas.student import (
+    StudentAcademicSummaryResponse,
     StudentCreate,
     StudentDetailResponse,
     StudentResponse,
     StudentUpdate,
 )
+from app.services.academic_service import academic_service
 
 router = APIRouter()
 
@@ -69,6 +71,23 @@ def get_student(student_id: str, db: SessionDep):
             detail=f"Student '{student_id}' not found",
         )
     return student
+
+
+@router.get(
+    "/{student_id}/summary",
+    response_model=StudentAcademicSummaryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get academic summary and semester GPA history for a student",
+)
+def get_student_summary(student_id: str, db: SessionDep):
+    """Retrieve cumulative GPA, accumulated credits, and per-semester GPA history for a student."""
+    student = student_repo.get_by_student_id(db, student_id)
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Student '{student_id}' not found",
+        )
+    return academic_service.get_student_academic_summary(db, student_id=student_id)
 
 
 @router.put(
