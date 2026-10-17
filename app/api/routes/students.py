@@ -5,6 +5,7 @@ from app.repositories import student_repo
 from app.schemas.student import (
     StudentAcademicSummaryResponse,
     StudentCreate,
+    StudentCurrentCourseItem,
     StudentDetailResponse,
     StudentResponse,
     StudentUpdate,
@@ -88,6 +89,42 @@ def get_student_summary(student_id: str, db: SessionDep):
             detail=f"Student '{student_id}' not found",
         )
     return academic_service.get_student_academic_summary(db, student_id=student_id)
+
+
+@router.get(
+    "/{student_id}/current",
+    response_model=list[StudentCurrentCourseItem],
+    status_code=status.HTTP_200_OK,
+    summary="Get enrolled courses in current active semester for a student",
+)
+def get_student_current_courses(student_id: str, db: SessionDep):
+    """Retrieve the list of registered courses for a student in the current active semester.
+
+    Handles edge cases and exceptions:
+    - 404: Student does not exist in the system.
+    - 404: Student has already graduated (passed graduation thesis CO4337) and has no registered classes in the current semester.
+    - 404: Student is not graduated but has not registered for any classes in the current semester.
+    """
+    student = student_repo.get_by_student_id(db, student_id)
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Student '{student_id}' not found",
+        )
+
+    semester_code, courses = academic_service.get_student_current_courses(db, student_id=student_id)
+    if not courses:
+        if academic_service.is_student_graduated(db, student_id=student_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Student '{student_id}' has already graduated and has no registered classes in semester {semester_code}",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Student '{student_id}' has not registered for any classes in semester {semester_code}",
+        )
+
+    return courses
 
 
 @router.put(

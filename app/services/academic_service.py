@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.repositories import enrollment_repo, student_repo
+from app.repositories import enrollment_repo, semester_repo, student_repo
 
 
 class AcademicService:
@@ -106,11 +106,60 @@ class AcademicService:
             - total_attempted_credits
             - passed_courses_count
             - failed_courses_count
+            - is_graduated: whether student passed graduation thesis (CO4337)
             - semester_gpas: list of per-semester GPA performance records
         """
         summary = enrollment_repo.get_academic_summary(db, student_id=student_id)
         summary["semester_gpas"] = enrollment_repo.get_semester_gpa_history(db, student_id=student_id)
         return summary
+
+    @staticmethod
+    def is_student_graduated(
+        db: Session,
+        *,
+        student_id: str,
+    ) -> bool:
+        """Check if a student has successfully passed the graduation thesis (CO4337).
+
+        Args:
+            db: Database session.
+            student_id: Student code identifier.
+
+        Returns:
+            True if student passed CO4337, otherwise False.
+        """
+        return enrollment_repo.is_student_graduated(db, student_id=student_id)
+
+    @staticmethod
+    def get_current_semester_code(db: Session) -> str:
+        """Resolve current active semester code, defaulting to 'HK261' if not configured."""
+        active_semester = semester_repo.get_active_semester(db)
+        return active_semester.semester_code if active_semester else "HK261"
+
+    @staticmethod
+    def get_student_current_courses(
+        db: Session,
+        *,
+        student_id: str,
+        semester_code: str | None = None,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Fetch all courses enrolled by a student in the current active semester.
+
+        Args:
+            db: Database session.
+            student_id: Student code identifier.
+            semester_code: Target semester code. If None, resolves active semester from database.
+
+        Returns:
+            Tuple of (semester_code, list of course enrollment details).
+        """
+        target_term = semester_code or AcademicService.get_current_semester_code(db)
+        courses = enrollment_repo.get_student_semester_courses(
+            db,
+            student_id=student_id,
+            semester_code=target_term,
+        )
+        return target_term, courses
 
 
 academic_service = AcademicService()

@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Integer, String
+from sqlalchemy import Boolean, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -16,6 +16,7 @@ class Semester(Base):
     semester_code: Mapped[str] = mapped_column(String(20), primary_key=True)
     academic_year: Mapped[str] = mapped_column(String(20), nullable=False)
     term: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
     classes: Mapped[list["AcademicClass"]] = relationship(
         "AcademicClass",

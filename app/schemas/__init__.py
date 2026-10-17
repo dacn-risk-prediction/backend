@@ -35,8 +35,11 @@ from app.schemas.semester import (
     SemesterUpdate,
 )
 from app.schemas.student import (
+    SemesterGpaItem,
+    StudentAcademicSummaryResponse,
     StudentBase,
     StudentCreate,
+    StudentCurrentCourseItem,
     StudentDetailResponse,
     StudentResponse,
     StudentUpdate,
@@ -85,8 +88,11 @@ __all__ = [
     "SemesterResponse",
     "SemesterUpdate",
     # Student
+    "SemesterGpaItem",
+    "StudentAcademicSummaryResponse",
     "StudentBase",
     "StudentCreate",
+    "StudentCurrentCourseItem",
     "StudentDetailResponse",
     "StudentResponse",
     "StudentUpdate",

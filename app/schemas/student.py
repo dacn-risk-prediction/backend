@@ -77,7 +77,23 @@ class StudentAcademicSummaryResponse(BaseModel):
     total_attempted_credits: int = Field(..., ge=0, description="Total attempted credits across all terms", examples=[127])
     passed_courses_count: int = Field(..., ge=0, description="Total number of passed courses", examples=[44])
     failed_courses_count: int = Field(..., ge=0, description="Total number of failed courses", examples=[0])
+    is_graduated: bool = Field(default=False, description="Whether the student passed Graduation Thesis CO4337", examples=[True])
     semester_gpas: list[SemesterGpaItem] = Field(
         default_factory=list,
         description="Chronological semester-by-semester GPA performance records",
     )
+
+
+class StudentCurrentCourseItem(BaseModel):
+    """Course enrolled by a student in the current active semester."""
+    course_code: str = Field(..., description="Course code identifier", examples=["CO4029"])
+    course_name: str = Field(..., description="Official title of the course", examples=["Đồ án Chuyên ngành"])
+    credits: int = Field(..., ge=0, description="Academic course credits", examples=[2])
+    class_id: str | None = Field(default=None, description="Academic class identifier", examples=["HK261_CO4029_L01"])
+    class_group: str | None = Field(default=None, description="Class section / group code", examples=["L01"])
+    lecturer_id: str | None = Field(default=None, description="Assigned lecturer code", examples=["1300746"])
+    lecturer_name: str | None = Field(default=None, description="Lecturer full name", examples=["Ngô Quốc An"])
+    retaken: bool = Field(default=False, description="Whether this course is retaken", examples=[False])
+    status: str | None = Field(default=None, description="Enrollment status (e.g. enrolled, completed)", examples=["enrolled"])
+
+    model_config = ConfigDict(from_attributes=True)

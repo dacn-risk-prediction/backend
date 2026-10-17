@@ -4,8 +4,11 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.models.academic_class import AcademicClass
 from app.models.course import Course
 from app.models.enrollment import Enrollment
+from app.models.lecturer import Lecturer
+from app.models.user import User
 from app.schemas.enrollment import EnrollmentCreate, EnrollmentUpdate
 
 
@@ -281,6 +284,7 @@ class EnrollmentRepository:
         """
         statement = (
             select(
+                Enrollment.course_code,
                 Enrollment.gpa_4,
                 Enrollment.passed,
                 Course.credits,
@@ -299,12 +303,15 @@ class EnrollmentRepository:
         weighted_passed_points = 0.0
         passed_count = 0
         failed_count = 0
+        is_graduated = False
 
-        for gpa_4, passed, credits in records:
+        for course_code, gpa_4, passed, credits in records:
             total_attempted_credits += credits
             if passed:
                 total_passed_credits += credits
                 passed_count += 1
+                if course_code == "CO4337":
+                    is_graduated = True
                 if gpa_4 is not None:
                     weighted_passed_points += gpa_4 * credits
             elif passed is False:
@@ -323,6 +330,7 @@ class EnrollmentRepository:
             "total_attempted_credits": total_attempted_credits,
             "passed_courses_count": passed_count,
             "failed_courses_count": failed_count,
+            "is_graduated": is_graduated,
         }
 
     def get_semester_gpa_history(
@@ -386,6 +394,52 @@ class EnrollmentRepository:
             })
 
         return history
+
+    def is_student_graduated(self, db: Session, *, student_id: str) -> bool:
+        """Check whether a student has successfully passed the graduation thesis (CO4337)."""
+        statement = (
+            select(Enrollment.id)
+            .where(
+                Enrollment.student_id == student_id,
+                Enrollment.course_code == "CO4337",
+                Enrollment.passed.is_(True),
+            )
+            .limit(1)
+        )
+        return db.scalar(statement) is not None
+
+    def get_student_semester_courses(
+        self,
+        db: Session,
+        *,
+        student_id: str,
+        semester_code: str = "HK261",
+    ) -> list[dict[str, Any]]:
+        """Fetch all course enrollments for a student in a specific semester with course, class, and lecturer details."""
+        statement = (
+            select(
+                Enrollment.course_code,
+                Course.course_name,
+                Course.credits,
+                Enrollment.class_id,
+                AcademicClass.class_group,
+                AcademicClass.lecturer_id,
+                User.name.label("lecturer_name"),
+                Enrollment.retaken,
+                Enrollment.status,
+            )
+            .join(Course, Enrollment.course_code == Course.course_code)
+            .outerjoin(AcademicClass, Enrollment.class_id == AcademicClass.class_id)
+            .outerjoin(Lecturer, AcademicClass.lecturer_id == Lecturer.lecturer_id)
+            .outerjoin(User, Lecturer.user_id == User.id)
+            .where(
+                Enrollment.student_id == student_id,
+                Enrollment.semester_code == semester_code,
+            )
+            .order_by(Enrollment.course_code)
+        )
+        records = db.execute(statement).all()
+        return [dict(record._mapping) for record in records]
 
 
 enrollment_repo = EnrollmentRepository()

@@ -17,6 +17,11 @@ class SemesterBase(BaseModel):
         description="Term number within the academic year (e.g. 1, 2, 3)",
         examples=[1],
     )
+    is_active: bool = Field(
+        default=False,
+        description="Whether this semester is the currently active term",
+        examples=[False],
+    )
 
 
 class SemesterCreate(SemesterBase):
@@ -34,6 +39,7 @@ class SemesterUpdate(BaseModel):
     """Schema for updating a semester. All fields are optional."""
     academic_year: str | None = Field(default=None, min_length=1, max_length=20)
     term: int | None = Field(default=None, ge=1, le=4)
+    is_active: bool | None = Field(default=None, description="Whether this semester is the currently active term")
 
 
 class SemesterResponse(SemesterBase):

@@ -22,9 +22,16 @@ def list_semesters(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     academic_year: str | None = Query(default=None, description="Filter by academic year"),
+    is_active: bool | None = Query(default=None, description="Filter by active status"),
 ):
     """Retrieve semesters sorted from most recent."""
-    return semester_repo.get_multi(db, skip=skip, limit=limit, academic_year=academic_year)
+    return semester_repo.get_multi(
+        db,
+        skip=skip,
+        limit=limit,
+        academic_year=academic_year,
+        is_active=is_active,
+    )
 
 
 @router.post(
@@ -42,6 +49,23 @@ def create_semester(semester_in: SemesterCreate, db: SessionDep):
             detail=f"Semester with code '{semester_in.semester_code}' already exists",
         )
     return semester_repo.create(db, obj_in=semester_in)
+
+
+@router.get(
+    "/active",
+    response_model=SemesterResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get current active semester",
+)
+def get_active_semester(db: SessionDep):
+    """Retrieve the currently active academic semester."""
+    semester = semester_repo.get_active_semester(db)
+    if not semester:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active semester found",
+        )
+    return semester
 
 
 @router.get(

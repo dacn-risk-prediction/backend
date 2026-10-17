@@ -73,12 +73,12 @@ backend/
 │   │   ├── course.py        # Course & CoursePrerequisite models
 │   │   ├── enrollment.py    # Enrollment model (grades & performance)
 │   │   ├── lecturer.py      # Lecturer model
-│   │   ├── semester.py      # Semester model
+│   │   ├── semester.py      # Semester model (academic year, term, is_active flag)
 │   │   ├── student.py       # Student model
 │   │   └── user.py          # User model (accounts & authentication)
-│   ├── repositories/        # Data Access Layer (CRUD queries, no business logic)
+│   ├── repositories/        # Data Access Layer (CRUD queries, GPA calculations, graduation detection)
 │   ├── schemas/             # Pydantic v2 DTOs (Request / Response validation)
-│   ├── services/            # Business logic and external HTTP client integrations
+│   ├── services/            # Business logic: academic_service.py (GPA, graduation, current courses)
 │   └── main.py              # Application entrypoint & CORS middleware
 ├── .env.example             # Template for environment variables
 ├── alembic.ini              # Alembic root configuration
@@ -212,23 +212,50 @@ FastAPI generates automated, interactive API documentation:
 | Tag | Method | Endpoint | Description |
 |---|---|---|---|
 | **Authentication** | `POST` | `/api/v1/auth/login` | Login with email and password to receive JWT |
+| **Authentication** | `POST` | `/api/v1/auth/refresh` | Rotate and issue fresh access and refresh tokens |
+| **Users** | `GET` | `/api/v1/users/me` | Get profile of currently authenticated user |
 | **Users** | `GET`, `POST` | `/api/v1/users/` | List users or register new account |
 | **Users** | `GET`, `PUT`, `DELETE` | `/api/v1/users/{user_id}` | Manage single user profile |
 | **Students** | `GET`, `POST` | `/api/v1/students/` | List students (cohort/major filter) or create |
 | **Students** | `GET`, `PUT`, `DELETE` | `/api/v1/students/{student_id}` | Get detailed profile with linked user account |
-| **Students** | `GET` | `/api/v1/students/{student_id}/summary` | Cumulative GPA, credits & per-semester GPA history |
+| **Students** | `GET` | `/api/v1/students/{student_id}/summary` | Cumulative GPA, credits, term history & graduation status |
+| **Students** | `GET` | `/api/v1/students/{student_id}/current` | Enrolled courses in current active semester with lecturer details |
 | **Lecturers** | `GET`, `POST` | `/api/v1/lecturers/` | List lecturers (department filter) or create |
 | **Lecturers** | `GET`, `PUT`, `DELETE` | `/api/v1/lecturers/{lecturer_id}` | Manage lecturer record |
 | **Courses** | `GET`, `POST` | `/api/v1/courses/` | List courses (search/pagination) or create |
 | **Courses** | `GET`, `PUT`, `DELETE` | `/api/v1/courses/{course_code}` | Get course details with prerequisite relations |
 | **Courses** | `POST` | `/api/v1/courses/{course_code}/prerequisites` | Attach prerequisite rule |
-| **Semesters** | `GET`, `POST` | `/api/v1/semesters/` | List and create academic semesters |
+| **Courses** | `DELETE` | `/api/v1/courses/prerequisites/{prerequisite_id}` | Remove prerequisite relation |
+| **Semesters** | `GET` | `/api/v1/semesters/active` | Get current active academic semester |
+| **Semesters** | `GET`, `POST` | `/api/v1/semesters/` | List (with is_active filter) and create academic semesters |
+| **Semesters** | `GET`, `PUT`, `DELETE` | `/api/v1/semesters/{semester_code}` | Manage semester record |
 | **Classes** | `GET`, `POST` | `/api/v1/classes/` | List and create classes |
 | **Classes** | `GET`, `PUT`, `DELETE` | `/api/v1/classes/{class_id}` | Get class details (nested course, lecturer, term) |
 | **Enrollments** | `GET`, `POST` | `/api/v1/enrollments/` | Register enrollment or search records |
 | **Enrollments** | `GET` | `/api/v1/enrollments/students/{student_id}` | Student transcript and grades by semester |
 | **Enrollments** | `GET` | `/api/v1/enrollments/classes/{class_id}` | Class grade roster |
+| **Enrollments** | `GET` | `/api/v1/enrollments/{enrollment_id}` | Get single enrollment record |
 | **Enrollments** | `PUT` | `/api/v1/enrollments/{enrollment_id}` | Grade entry (quiz, lab, btl, midterm, final, GPA) |
+| **Enrollments** | `DELETE` | `/api/v1/enrollments/{enrollment_id}` | Delete enrollment record |
+
+### Key Academic Analytics & Features
+
+1. **Active Term Dynamic Resolution**:
+   - Semesters maintain an `is_active` boolean column (`HK261` currently active, all other terms inactive).
+   - `GET /api/v1/semesters/active`: Fetches the currently running semester.
+   - `GET /api/v1/students/{student_id}/current`: Automatically resolves the active term and returns enrolled courses with class code, section group, credit weight, and lecturer names without hardcoded semester paths.
+
+2. **Student Academic Performance & Graduation Assessment**:
+   - `GET /api/v1/students/{student_id}/summary`: Computes:
+     - Weighted Cumulative GPA across all passed degree courses.
+     - Chronological per-semester GPA history for every term attended.
+     - Graduation detection: sets `is_graduated: true` when a student passes Graduation Thesis (*Đồ án Tốt nghiệp - Khoa học Máy tính* `CO4337`).
+
+3. **Multi-scenario Exception Handling**:
+   - For `/api/v1/students/{student_id}/current`:
+     - `404 Not Found`: Student does not exist in the database.
+     - `404 Not Found`: Student has already graduated (passed `CO4337`) and has no registered classes in the active term.
+     - `404 Not Found`: Student is inactive / has not registered for any classes in the current semester.
 
 ---
 
