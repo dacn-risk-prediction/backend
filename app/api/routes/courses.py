@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import SessionDep
-from app.repositories import course_repo
+from app.repositories import course_assessment_repo, course_repo
 from app.schemas.course import (
     CourseCreate,
     CourseDetailResponse,
@@ -10,6 +10,7 @@ from app.schemas.course import (
     CourseResponse,
     CourseUpdate,
 )
+from app.schemas.course_assessment import CourseAssessmentResponse
 
 router = APIRouter()
 
@@ -123,6 +124,23 @@ def add_prerequisite(
             detail="Either target course or prerequisite course does not exist",
         )
     return course_repo.add_prerequisite(db, obj_in=prereq_in)
+
+
+@router.get(
+    "/{course_code}/assessment",
+    response_model=CourseAssessmentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get assessment weights breakdown for a course",
+)
+def get_course_assessment(course_code: str, db: SessionDep):
+    """Retrieve score component weights (quiz, lab, btl, midterm, final) for a course."""
+    assessment = course_assessment_repo.get_by_course_code(db, course_code)
+    if not assessment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Assessment breakdown for course '{course_code}' not found",
+        )
+    return assessment
 
 
 @router.delete(

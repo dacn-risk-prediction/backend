@@ -4,6 +4,9 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.academic_class import AcademicClass
+from app.models.course import Course
+from app.models.enrollment import Enrollment
+from app.models.semester import Semester
 from app.schemas.academic_class import AcademicClassCreate, AcademicClassUpdate
 
 
@@ -140,6 +143,48 @@ class AcademicClassRepository:
             db.delete(db_obj)
             db.commit()
         return db_obj
+
+    def get_classes_by_lecturer_and_semester(
+        self,
+        db: Session,
+        *,
+        lecturer_id: str,
+        semester_code: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch all classes taught by a lecturer in a semester, with course details and student count."""
+        statement = (
+            select(
+                AcademicClass.class_id,
+                AcademicClass.class_group,
+                AcademicClass.course_code,
+                Course.course_name,
+                Course.credits,
+                AcademicClass.semester_code,
+                Semester.academic_year,
+                Semester.term,
+                func.count(Enrollment.id).label("total_students"),
+            )
+            .join(Course, AcademicClass.course_code == Course.course_code)
+            .join(Semester, AcademicClass.semester_code == Semester.semester_code)
+            .outerjoin(Enrollment, AcademicClass.class_id == Enrollment.class_id)
+            .where(
+                AcademicClass.lecturer_id == lecturer_id,
+                AcademicClass.semester_code == semester_code,
+            )
+            .group_by(
+                AcademicClass.class_id,
+                AcademicClass.class_group,
+                AcademicClass.course_code,
+                Course.course_name,
+                Course.credits,
+                AcademicClass.semester_code,
+                Semester.academic_year,
+                Semester.term,
+            )
+            .order_by(AcademicClass.class_id)
+        )
+        records = db.execute(statement).all()
+        return [dict(record._mapping) for record in records]
 
 
 academic_class_repo = AcademicClassRepository()

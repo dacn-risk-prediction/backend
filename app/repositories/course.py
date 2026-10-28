@@ -23,7 +23,10 @@ class CourseRepository:
         """Fetch a course eagerly loading its prerequisite relationships to avoid N+1 queries."""
         statement = (
             select(Course)
-            .options(selectinload(Course.prerequisites))
+            .options(
+                selectinload(Course.prerequisites),
+                selectinload(Course.assessment),
+            )
             .where(Course.course_code == course_code)
         )
         return db.scalar(statement)

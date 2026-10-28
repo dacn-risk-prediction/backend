@@ -300,6 +300,7 @@ class EnrollmentRepository:
 
         total_attempted_credits = 0
         total_passed_credits = 0
+        total_graded_passed_credits = 0
         weighted_passed_points = 0.0
         passed_count = 0
         failed_count = 0
@@ -314,12 +315,13 @@ class EnrollmentRepository:
                     is_graduated = True
                 if gpa_4 is not None:
                     weighted_passed_points += gpa_4 * credits
+                    total_graded_passed_credits += credits
             elif passed is False:
                 failed_count += 1
 
         cumulative_gpa = (
-            round(weighted_passed_points / total_passed_credits, 2)
-            if total_passed_credits > 0
+            round(weighted_passed_points / total_graded_passed_credits, 2)
+            if total_graded_passed_credits > 0
             else 0.0
         )
 

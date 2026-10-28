@@ -49,3 +49,18 @@ class LecturerDetailResponse(LecturerResponse):
     user: UserResponse | None = Field(default=None, description="Linked user profile")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class LecturerCurrentClassItem(BaseModel):
+    """Academic class taught by a lecturer in the current active semester."""
+    class_id: str = Field(..., description="Unique class identifier", examples=["HK261_CO1005_L01"])
+    class_group: str = Field(..., description="Class section or group name", examples=["L01"])
+    course_code: str = Field(..., description="Course code identifier", examples=["CO1005"])
+    course_name: str = Field(..., description="Title of the course", examples=["Nhập môn Điện toán"])
+    credits: int = Field(..., ge=0, description="Academic course credits", examples=[3])
+    semester_code: str = Field(..., description="Semester code identifier", examples=["HK261"])
+    academic_year: str | None = Field(default=None, description="Academic year range", examples=["2026-2027"])
+    term: int | None = Field(default=None, description="Term number within academic year", examples=[1])
+    total_students: int = Field(default=0, ge=0, description="Total number of students enrolled in the class", examples=[116])
+
+    model_config = ConfigDict(from_attributes=True)

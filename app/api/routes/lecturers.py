@@ -4,10 +4,12 @@ from app.api.deps import SessionDep
 from app.repositories import lecturer_repo
 from app.schemas.lecturer import (
     LecturerCreate,
+    LecturerCurrentClassItem,
     LecturerDetailResponse,
     LecturerResponse,
     LecturerUpdate,
 )
+from app.services.academic_service import academic_service
 
 router = APIRouter()
 
@@ -67,6 +69,41 @@ def get_lecturer(lecturer_id: str, db: SessionDep):
             detail=f"Lecturer '{lecturer_id}' not found",
         )
     return lecturer
+
+
+@router.get(
+    "/{lecturer_id}/current",
+    response_model=list[LecturerCurrentClassItem],
+    status_code=status.HTTP_200_OK,
+    summary="Get all classes taught by a lecturer in the current active semester",
+)
+def get_lecturer_current_classes(lecturer_id: str, db: SessionDep):
+    """Retrieve all classes assigned to a lecturer in the current active semester.
+
+    Handles edge cases:
+    - 404: Lecturer does not exist.
+    """
+    lecturer = lecturer_repo.get_by_lecturer_id(db, lecturer_id)
+    if not lecturer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Lecturer '{lecturer_id}' not found",
+        )
+
+    _, classes = academic_service.get_lecturer_current_classes(db, lecturer_id=lecturer_id)
+    return classes
+
+
+@router.get(
+    "/{lecturer_id}/classes/current",
+    response_model=list[LecturerCurrentClassItem],
+    status_code=status.HTTP_200_OK,
+    summary="Get all classes taught by a lecturer in the current active semester (alias)",
+    include_in_schema=False,
+)
+def get_lecturer_classes_current_alias(lecturer_id: str, db: SessionDep):
+    """Alias endpoint for /{lecturer_id}/current."""
+    return get_lecturer_current_classes(lecturer_id=lecturer_id, db=db)
 
 
 @router.put(

@@ -65,8 +65,7 @@ class EnrollmentBase(BaseModel):
     final_score: float | None = Field(
         default=None,
         ge=0.0,
-        le=10.0,
-        description="Weighted final score on 10-point scale",
+        description="Weighted final score on 10-point scale (or converted qualification score)",
     )
     letter_grade: str | None = Field(
         default=None,
@@ -121,7 +120,7 @@ class EnrollmentUpdate(BaseModel):
     btl: float | None = Field(default=None, ge=0.0, le=10.0)
     giua_ky: float | None = Field(default=None, ge=0.0, le=10.0)
     cuoi_ky: float | None = Field(default=None, ge=0.0, le=10.0)
-    final_score: float | None = Field(default=None, ge=0.0, le=10.0)
+    final_score: float | None = Field(default=None, ge=0.0)
     letter_grade: str | None = Field(default=None, max_length=10)
     gpa_4: float | None = Field(default=None, ge=0.0, le=4.0)
     passed: bool | None = Field(default=None)

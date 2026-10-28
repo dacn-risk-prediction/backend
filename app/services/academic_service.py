@@ -7,7 +7,12 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.repositories import enrollment_repo, semester_repo, student_repo
+from app.repositories import (
+    academic_class_repo,
+    enrollment_repo,
+    semester_repo,
+    student_repo,
+)
 
 
 class AcademicService:
@@ -160,6 +165,31 @@ class AcademicService:
             semester_code=target_term,
         )
         return target_term, courses
+
+    @staticmethod
+    def get_lecturer_current_classes(
+        db: Session,
+        *,
+        lecturer_id: str,
+        semester_code: str | None = None,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Fetch all classes taught by a lecturer in the current active semester.
+
+        Args:
+            db: Database session.
+            lecturer_id: Lecturer staff code identifier.
+            semester_code: Optional semester code. If omitted, uses active semester.
+
+        Returns:
+            Tuple of (semester_code, list of class records with course and student count details).
+        """
+        target_term = semester_code or AcademicService.get_current_semester_code(db)
+        classes = academic_class_repo.get_classes_by_lecturer_and_semester(
+            db,
+            lecturer_id=lecturer_id,
+            semester_code=target_term,
+        )
+        return target_term, classes
 
 
 academic_service = AcademicService()

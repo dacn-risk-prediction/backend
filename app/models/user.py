@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base_class import Base
 
 if TYPE_CHECKING:
+    from app.models.admin import Admin
     from app.models.lecturer import Lecturer
     from app.models.student import Student
 
@@ -25,6 +26,12 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
+    admin: Mapped[Optional["Admin"]] = relationship(
+        "Admin",
+        foreign_keys="[Admin.user_id]",
+        back_populates="user",
+        uselist=False,
+    )
     lecturer: Mapped[Optional["Lecturer"]] = relationship(
         "Lecturer",
         foreign_keys="[Lecturer.user_id]",

@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.course_assessment import CourseAssessmentResponse
+
 
 # ==========================================
 # Course Prerequisite Schemas
@@ -111,10 +113,14 @@ class CourseResponse(CourseBase):
 
 
 class CourseDetailResponse(CourseResponse):
-    """Detailed response schema including prerequisite relationships."""
+    """Detailed response schema including prerequisite relationships and assessment breakdown."""
     prerequisites: list[CoursePrerequisiteResponse] = Field(
         default_factory=list,
         description="List of prerequisite requirements for this course",
+    )
+    assessment: CourseAssessmentResponse | None = Field(
+        default=None,
+        description="Course evaluation percentage weights",
     )
 
     model_config = ConfigDict(from_attributes=True)

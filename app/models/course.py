@@ -7,6 +7,8 @@ from app.db.base_class import Base
 
 if TYPE_CHECKING:
     from app.models.academic_class import AcademicClass
+    from app.models.course_assessment import CourseAssessment
+    from app.models.curriculum import ProgramStructure
     from app.models.enrollment import Enrollment
 
 
@@ -34,6 +36,17 @@ class Course(Base):
     enrollments: Mapped[list["Enrollment"]] = relationship(
         "Enrollment",
         back_populates="course",
+    )
+    assessment: Mapped[Optional["CourseAssessment"]] = relationship(
+        "CourseAssessment",
+        back_populates="course",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    program_structures: Mapped[list["ProgramStructure"]] = relationship(
+        "ProgramStructure",
+        back_populates="course",
+        cascade="all, delete-orphan",
     )
 
 

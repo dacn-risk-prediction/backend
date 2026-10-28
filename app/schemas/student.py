@@ -10,7 +10,7 @@ class StudentBase(BaseModel):
         ...,
         min_length=1,
         max_length=20,
-        description="Enrollment cohort / academic year (e.g. K26, 2022)",
+        description="Enrollment cohort / academic year (e.g. K20, K26)",
         examples=["K26"],
     )
     major: str = Field(
@@ -18,7 +18,50 @@ class StudentBase(BaseModel):
         min_length=1,
         max_length=100,
         description="Academic major or program",
-        examples=["computer science"],
+        examples=["Khoa hoc May tinh"],
+    )
+    program: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Educational program (e.g. Dai tra, Chat luong cao, Tien tien)",
+        examples=["Chat luong cao"],
+    )
+    specialization: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Academic specialization track",
+        examples=["Cong nghe phan mem"],
+    )
+    family_income: str | None = Field(
+        default=None,
+        max_length=50,
+        description="Family income level",
+        examples=["Trung binh"],
+    )
+    financial_pressure: str | None = Field(
+        default=None,
+        max_length=50,
+        description="Financial pressure indicator",
+        examples=["Thap"],
+    )
+    living_condition: str | None = Field(
+        default=None,
+        max_length=50,
+        description="Living condition indicator",
+        examples=["Ky tuc xa"],
+    )
+    english_pass: bool | None = Field(
+        default=False,
+        description="Whether English graduation exit requirement is satisfied",
+        examples=[True],
+    )
+    english_eligibility_by_semester: str | None = Field(
+        default=None,
+        description="Chronological English qualification status recorded by semester",
+    )
+    ctxh_days_by_semester: str | None = Field(
+        default=None,
+        description="Chronological accumulated social work days recorded by semester",
     )
 
 
@@ -41,6 +84,14 @@ class StudentUpdate(BaseModel):
     """Schema for updating a student record. All fields are optional."""
     cohort: str | None = Field(default=None, min_length=1, max_length=20)
     major: str | None = Field(default=None, min_length=1, max_length=100)
+    program: str | None = Field(default=None, max_length=100)
+    specialization: str | None = Field(default=None, max_length=100)
+    family_income: str | None = Field(default=None, max_length=50)
+    financial_pressure: str | None = Field(default=None, max_length=50)
+    living_condition: str | None = Field(default=None, max_length=50)
+    english_pass: bool | None = Field(default=None)
+    english_eligibility_by_semester: str | None = Field(default=None)
+    ctxh_days_by_semester: str | None = Field(default=None)
     user_id: uuid.UUID | None = Field(default=None)
 
 

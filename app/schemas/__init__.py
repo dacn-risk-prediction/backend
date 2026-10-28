@@ -5,6 +5,13 @@ from app.schemas.academic_class import (
     AcademicClassResponse,
     AcademicClassUpdate,
 )
+from app.schemas.admin import (
+    AdminBase,
+    AdminCreate,
+    AdminDetailResponse,
+    AdminResponse,
+    AdminUpdate,
+)
 from app.schemas.course import (
     CourseBase,
     CourseCreate,
@@ -15,6 +22,27 @@ from app.schemas.course import (
     CourseResponse,
     CourseUpdate,
 )
+from app.schemas.course_assessment import (
+    CourseAssessmentBase,
+    CourseAssessmentCreate,
+    CourseAssessmentResponse,
+    CourseAssessmentUpdate,
+)
+from app.schemas.curriculum import (
+    CurriculumBase,
+    CurriculumCreate,
+    CurriculumResponse,
+    CurriculumUpdate,
+    KnowledgeBlockBase,
+    KnowledgeBlockCreate,
+    KnowledgeBlockResponse,
+    KnowledgeBlockUpdate,
+    ProgramStructureBase,
+    ProgramStructureCreate,
+    ProgramStructureDetailResponse,
+    ProgramStructureResponse,
+    ProgramStructureUpdate,
+)
 from app.schemas.enrollment import (
     EnrollmentBase,
     EnrollmentCreate,
@@ -24,6 +52,7 @@ from app.schemas.enrollment import (
 from app.schemas.lecturer import (
     LecturerBase,
     LecturerCreate,
+    LecturerCurrentClassItem,
     LecturerDetailResponse,
     LecturerResponse,
     LecturerUpdate,
@@ -62,7 +91,13 @@ __all__ = [
     "AcademicClassDetailResponse",
     "AcademicClassResponse",
     "AcademicClassUpdate",
-    # Course
+    # Admin
+    "AdminBase",
+    "AdminCreate",
+    "AdminDetailResponse",
+    "AdminResponse",
+    "AdminUpdate",
+    # Course & Assessment
     "CourseBase",
     "CourseCreate",
     "CourseDetailResponse",
@@ -71,6 +106,24 @@ __all__ = [
     "CoursePrerequisiteResponse",
     "CourseResponse",
     "CourseUpdate",
+    "CourseAssessmentBase",
+    "CourseAssessmentCreate",
+    "CourseAssessmentResponse",
+    "CourseAssessmentUpdate",
+    # Curriculum & Structure
+    "CurriculumBase",
+    "CurriculumCreate",
+    "CurriculumResponse",
+    "CurriculumUpdate",
+    "KnowledgeBlockBase",
+    "KnowledgeBlockCreate",
+    "KnowledgeBlockResponse",
+    "KnowledgeBlockUpdate",
+    "ProgramStructureBase",
+    "ProgramStructureCreate",
+    "ProgramStructureDetailResponse",
+    "ProgramStructureResponse",
+    "ProgramStructureUpdate",
     # Enrollment
     "EnrollmentBase",
     "EnrollmentCreate",
@@ -79,6 +132,7 @@ __all__ = [
     # Lecturer
     "LecturerBase",
     "LecturerCreate",
+    "LecturerCurrentClassItem",
     "LecturerDetailResponse",
     "LecturerResponse",
     "LecturerUpdate",
