@@ -32,36 +32,16 @@ class StudentBase(BaseModel):
         description="Academic specialization track",
         examples=["Cong nghe phan mem"],
     )
-    family_income: str | None = Field(
-        default=None,
-        max_length=50,
-        description="Family income level",
-        examples=["Trung binh"],
-    )
-    financial_pressure: str | None = Field(
-        default=None,
-        max_length=50,
-        description="Financial pressure indicator",
-        examples=["Thap"],
-    )
-    living_condition: str | None = Field(
-        default=None,
-        max_length=50,
-        description="Living condition indicator",
-        examples=["Ky tuc xa"],
-    )
     english_pass: bool | None = Field(
         default=False,
         description="Whether English graduation exit requirement is satisfied",
         examples=[True],
     )
-    english_eligibility_by_semester: str | None = Field(
-        default=None,
-        description="Chronological English qualification status recorded by semester",
-    )
-    ctxh_days_by_semester: str | None = Field(
-        default=None,
-        description="Chronological accumulated social work days recorded by semester",
+    ctxh_days: int | None = Field(
+        default=0,
+        ge=0,
+        description="Cumulative social work days (CTXH)",
+        examples=[15],
     )
 
 
@@ -86,12 +66,8 @@ class StudentUpdate(BaseModel):
     major: str | None = Field(default=None, min_length=1, max_length=100)
     program: str | None = Field(default=None, max_length=100)
     specialization: str | None = Field(default=None, max_length=100)
-    family_income: str | None = Field(default=None, max_length=50)
-    financial_pressure: str | None = Field(default=None, max_length=50)
-    living_condition: str | None = Field(default=None, max_length=50)
     english_pass: bool | None = Field(default=None)
-    english_eligibility_by_semester: str | None = Field(default=None)
-    ctxh_days_by_semester: str | None = Field(default=None)
+    ctxh_days: int | None = Field(default=None, ge=0)
     user_id: uuid.UUID | None = Field(default=None)
 
 

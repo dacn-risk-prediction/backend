@@ -1,7 +1,7 @@
 import uuid
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Boolean, ForeignKey, Index, String, Text, Uuid, text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -32,14 +32,12 @@ class Student(Base):
     major: Mapped[str] = mapped_column(String(100), nullable=False)
     program: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     specialization: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    family_income: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    financial_pressure: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    living_condition: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     english_pass: Mapped[Optional[bool]] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=True
     )
-    english_eligibility_by_semester: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    ctxh_days_by_semester: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ctxh_days: Mapped[Optional[int]] = mapped_column(
+        Integer, default=0, server_default=text("0"), nullable=True
+    )
 
     user: Mapped[Optional["User"]] = relationship(
         "User",

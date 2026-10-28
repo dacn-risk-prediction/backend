@@ -257,12 +257,8 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
       "major": "Khoa hoc May tinh",
       "program": "Dai tra",
       "specialization": "Cong nghe phan mem",
-      "family_income": "Trung binh",
-      "financial_pressure": "Thap",
-      "living_condition": "Ky tuc xa",
       "english_pass": true,
-      "english_eligibility_by_semester": "HK261:DAT",
-      "ctxh_days_by_semester": "HK261:15",
+      "ctxh_days": 15,
       "user_id": "123e4567-e89b-12d3-a456-426614174000"
     }
   ]
@@ -280,12 +276,8 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
     "major": "Khoa hoc May tinh",
     "program": "Dai tra",
     "specialization": "Cong nghe phan mem",
-    "family_income": "Trung binh",
-    "financial_pressure": "Thap",
-    "living_condition": "Ky tuc xa",
     "english_pass": true,
-    "english_eligibility_by_semester": "HK261:DAT",
-    "ctxh_days_by_semester": "HK261:15",
+    "ctxh_days": 15,
     "user_id": "123e4567-e89b-12d3-a456-426614174000"
   }
   ```
@@ -304,12 +296,8 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
     "major": "Khoa hoc May tinh",
     "program": "Dai tra",
     "specialization": "Cong nghe phan mem",
-    "family_income": "Trung binh",
-    "financial_pressure": "Thap",
-    "living_condition": "Ky tuc xa",
     "english_pass": true,
-    "english_eligibility_by_semester": "HK261:DAT",
-    "ctxh_days_by_semester": "HK261:15",
+    "ctxh_days": 15,
     "user_id": "123e4567-e89b-12d3-a456-426614174000",
     "user": {
       "id": "123e4567-e89b-12d3-a456-426614174000",
@@ -414,12 +402,8 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
     "major": "Khoa hoc May tinh",
     "program": "Dai tra",
     "specialization": "He thong thong tin",
-    "family_income": "Kha",
-    "financial_pressure": "Thap",
-    "living_condition": "Nha rieng",
     "english_pass": true,
-    "english_eligibility_by_semester": "HK261:DAT",
-    "ctxh_days_by_semester": "HK261:18",
+    "ctxh_days": 18,
     "user_id": "123e4567-e89b-12d3-a456-426614174000"
   }
   ```
@@ -1071,12 +1055,8 @@ export interface Student {
   major: string;
   program: string | null;
   specialization: string | null;
-  family_income: string | null;
-  financial_pressure: string | null;
-  living_condition: string | null;
   english_pass: boolean | null;
-  english_eligibility_by_semester: string | null;
-  ctxh_days_by_semester: string | null;
+  ctxh_days: number | null;
   user_id: string | null;
 }
 
@@ -1090,12 +1070,8 @@ export interface StudentCreatePayload {
   major: string;
   program?: string | null;
   specialization?: string | null;
-  family_income?: string | null;
-  financial_pressure?: string | null;
-  living_condition?: string | null;
   english_pass?: boolean | null;
-  english_eligibility_by_semester?: string | null;
-  ctxh_days_by_semester?: string | null;
+  ctxh_days?: number | null;
   user_id?: string | null;
 }
 
@@ -1104,12 +1080,8 @@ export interface StudentUpdatePayload {
   major?: string;
   program?: string | null;
   specialization?: string | null;
-  family_income?: string | null;
-  financial_pressure?: string | null;
-  living_condition?: string | null;
   english_pass?: boolean | null;
-  english_eligibility_by_semester?: string | null;
-  ctxh_days_by_semester?: string | null;
+  ctxh_days?: number | null;
   user_id?: string | null;
 }
 
