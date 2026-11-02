@@ -174,6 +174,7 @@ erDiagram
 - **Python 3.11+** (Tested on Python 3.14)
 - **uv** (Recommended package and environment manager — [install guide](https://docs.astral.sh/uv/getting-started/installation/))
 - **PostgreSQL** (Docker or Neon Cloud instance)
+- **Docker Engine** (Optional, for containerized local execution)
 
 ---
 
@@ -264,6 +265,63 @@ uv run uvicorn app.main:app --reload --port 8000
 ```
 
 The server will start at `http://127.0.0.1:8000`.
+
+---
+
+### Alternative: Run with Docker (Containerized Setup)
+
+If you prefer to run the application entirely in a container without configuring Python or virtual environments locally:
+
+#### 1. Build the Docker Image
+
+Build the optimized multi-stage image using the provided `Dockerfile`:
+
+```bash
+docker build -t dacn-backend:latest .
+```
+
+> [!NOTE]
+> The build process leverages Astral `uv` with multi-stage caching (`python:3.12-slim`), excludes dev dependencies (`--no-dev`), and executes under a secure non-root user (`appuser`).
+
+#### 2. Run the Container
+
+Run the container in detached mode, passing database and secret credentials via `.env`:
+
+```bash
+docker run -d \
+  --name dacn-backend \
+  -p 8000:8000 \
+  --env-file .env \
+  dacn-backend:latest
+```
+
+#### 3. Verify Health Check & Follow Logs
+
+```bash
+# Check container status
+docker ps
+
+# Verify health status
+curl http://localhost:8000/health
+# Response: {"status":"ok"}
+
+# Follow application logs
+docker logs -f dacn-backend
+```
+
+#### 4. Run Migrations inside Container (Optional)
+
+Apply database schema migrations directly within the running container:
+
+```bash
+docker exec -it dacn-backend alembic upgrade head
+```
+
+#### 5. Stop and Clean Up Container
+
+```bash
+docker stop dacn-backend && docker rm dacn-backend
+```
 
 ---
 

@@ -21,3 +21,6 @@ dependencies = [
     "httpx>=0.28.0",
     "sqlacodegen>=4.0.0",
 ]
+
+[tool.uv]
+package = false
