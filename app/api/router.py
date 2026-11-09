@@ -7,6 +7,7 @@ from app.api.routes import (
     curriculums,
     enrollments,
     lecturers,
+    predictions,
     semesters,
     students,
     users,
@@ -23,3 +24,5 @@ api_router.include_router(curriculums.router, prefix="/curriculums", tags=["Curr
 api_router.include_router(semesters.router, prefix="/semesters", tags=["Semesters"])
 api_router.include_router(classes.router, prefix="/classes", tags=["Classes"])
 api_router.include_router(enrollments.router, prefix="/enrollments", tags=["Enrollments"])
+api_router.include_router(predictions.router, prefix="/predictions", tags=["Predictions & XAI"])
+

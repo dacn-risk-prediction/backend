@@ -20,6 +20,9 @@ class Settings(BaseSettings):
         "http://localhost:5173",
     ]
 
+    # AI/ML Model Service (External Inference Microservice)
+    MODEL_SERVICE_URL: str = "http://localhost:8001"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

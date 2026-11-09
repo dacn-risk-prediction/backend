@@ -1,29 +1,30 @@
 # API Specification & Frontend Integration Guide
 
-> **System**: Student Academic Performance & Dropout Early Warning System (*Hệ thống Cảnh báo Rủi ro ĐACN*)  
-> **API Version**: `0.1.0`  
-> **Base URL**: `http://localhost:8000/api/v1`  
-> **Swagger UI (Interactive Docs)**: [http://localhost:8000/docs](http://localhost:8000/docs)  
+> **System**: Student Academic Performance & Dropout Early Warning System (*Hệ thống Cảnh báo Rủi ro ĐACN*)
+> **API Version**: `0.1.0`
+> **Base URL**: `http://localhost:8000/api/v1`
+> **Swagger UI (Interactive Docs)**: [http://localhost:8000/docs](http://localhost:8000/docs)
 > **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
 ---
 
 ## Table of Contents
-1. [General Conventions & Guidelines](#1-general-conventions--guidelines)
-2. [Authentication & Authorization](#2-authentication--authorization)
-3. [Error Handling & Status Codes](#3-error-handling--status-codes)
+
+1. [General Conventions &amp; Guidelines](#1-general-conventions--guidelines)
+2. [Authentication &amp; Authorization](#2-authentication--authorization)
+3. [Error Handling &amp; Status Codes](#3-error-handling--status-codes)
 4. [Endpoint Reference by Module](#4-endpoint-reference-by-module)
    - [Authentication](#authentication)
    - [Users](#users)
    - [Students](#students)
    - [Lecturers](#lecturers)
-   - [Courses & Prerequisites](#courses--prerequisites)
-   - [Curriculums & Program Structures](#curriculums--program-structures)
+   - [Courses &amp; Prerequisites](#courses--prerequisites)
+   - [Curriculums &amp; Program Structures](#curriculums--program-structures)
    - [Semesters](#semesters)
    - [Academic Classes](#academic-classes)
-   - [Enrollments & Grades](#enrollments--grades)
+   - [Enrollments &amp; Grades](#enrollments--grades)
    - [System Health](#system-health)
-5. [TypeScript Interfaces & DTOs](#5-typescript-interfaces--dtos)
+5. [TypeScript Interfaces &amp; DTOs](#5-typescript-interfaces--dtos)
 6. [Axios API Client Example with Token Refresh](#6-axios-api-client-example-with-token-refresh)
 
 ---
@@ -45,18 +46,22 @@
 The system utilizes **JWT (JSON Web Token)** authentication with token separation (Access Token & Refresh Token).
 
 ### Token Types & Storage
-| Token Type | Lifespan | Recommended Storage | Purpose |
-|---|---|---|---|
-| **Access Token** | Short-lived (60 min) | Memory / State / Cookie | Sent in `Authorization` header for protected endpoints |
-| **Refresh Token** | Long-lived (7 days) | `localStorage` or `HttpOnly Cookie` | Used to obtain a fresh access token without re-login |
+
+| Token Type              | Lifespan             | Recommended Storage                     | Purpose                                                  |
+| ----------------------- | -------------------- | --------------------------------------- | -------------------------------------------------------- |
+| **Access Token**  | Short-lived (60 min) | Memory / State / Cookie                 | Sent in `Authorization` header for protected endpoints |
+| **Refresh Token** | Long-lived (7 days)  | `localStorage` or `HttpOnly Cookie` | Used to obtain a fresh access token without re-login     |
 
 ### Authorization Header
+
 For endpoints requiring authentication, send the access token in the HTTP header:
+
 ```http
 Authorization: Bearer <access_token>
 ```
 
 ### Roles (`role`)
+
 - `admin`: Full administrative access.
 - `lecturer`: Academic staff / instructor.
 - `student`: Enrolled student.
@@ -66,21 +71,23 @@ Authorization: Bearer <access_token>
 ## 3. Error Handling & Status Codes
 
 ### Standard HTTP Status Codes
-| Status | Meaning | Scenario |
-|---|---|---|
-| **`200 OK`** | Success | Request succeeded and returned data |
-| **`201 Created`** | Created | Resource successfully created (POST) |
-| **`204 No Content`** | Deleted | Resource successfully deleted (DELETE) |
-| **`400 Bad Request`** | Client Error | Malformed business logic or invalid request data |
-| **`401 Unauthorized`** | Auth Error | Missing token, invalid token, or expired credentials |
-| **`403 Forbidden`** | Permission Denied | Authenticated user lacks the required role |
-| **`404 Not Found`** | Resource Missing | Entity with requested ID does not exist |
-| **`409 Conflict`** | Duplicate Key | Email, user code, or unique identifier already exists |
-| **`422 Unprocessable Content`** | Validation Error | Pydantic schema validation failed (wrong types, missing fields) |
+
+| Status                                  | Meaning           | Scenario                                                        |
+| --------------------------------------- | ----------------- | --------------------------------------------------------------- |
+| **`200 OK`**                    | Success           | Request succeeded and returned data                             |
+| **`201 Created`**               | Created           | Resource successfully created (POST)                            |
+| **`204 No Content`**            | Deleted           | Resource successfully deleted (DELETE)                          |
+| **`400 Bad Request`**           | Client Error      | Malformed business logic or invalid request data                |
+| **`401 Unauthorized`**          | Auth Error        | Missing token, invalid token, or expired credentials            |
+| **`403 Forbidden`**             | Permission Denied | Authenticated user lacks the required role                      |
+| **`404 Not Found`**             | Resource Missing  | Entity with requested ID does not exist                         |
+| **`409 Conflict`**              | Duplicate Key     | Email, user code, or unique identifier already exists           |
+| **`422 Unprocessable Content`** | Validation Error  | Pydantic schema validation failed (wrong types, missing fields) |
 
 ### Error Response Schemas
 
 #### Standard Business Error (`400`, `401`, `403`, `404`, `409`)
+
 ```json
 {
   "detail": "Incorrect email or password"
@@ -88,7 +95,9 @@ Authorization: Bearer <access_token>
 ```
 
 #### Validation Error (`422 Unprocessable Content`)
+
 Returned when payload fails validation (e.g. invalid email format, missing required body field):
+
 ```json
 {
   "detail": [
@@ -111,20 +120,24 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ### Authentication
 
 #### 1. User Login
+
 - **Endpoint**: `POST /api/v1/auth/login`
 - **Auth Required**: No
 - **Headers**: `Content-Type: application/json`
 - **Request Body**:
+
   ```json
   {
     "email": "user@university.edu.vn",
     "password": "mySecurePassword123"
   }
   ```
+
   > [!WARNING]
   > Must be sent as JSON body with `email` (not `username`) and `password`. Do not send as `application/x-www-form-urlencoded`.
-
+  >
 - **Response (`200 OK`)**:
+
   ```json
   {
     "access_token": "eyJhbGciOiJIUzI1NiIsIn...",
@@ -137,6 +150,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 2. Rotate Refresh Token
+
 - **Endpoint**: `POST /api/v1/auth/refresh`
 - **Auth Required**: No
 - **Request Body**:
@@ -160,6 +174,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ### Users
 
 #### 1. Get Current User Profile
+
 - **Endpoint**: `GET /api/v1/users/me`
 - **Auth Required**: Yes (`Bearer <access_token>`)
 - **Response (`200 OK`)**:
@@ -177,6 +192,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 2. List Users
+
 - **Endpoint**: `GET /api/v1/users/`
 - **Auth Required**: No
 - **Query Parameters**:
@@ -189,6 +205,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 3. Create User Account
+
 - **Endpoint**: `POST /api/v1/users/`
 - **Auth Required**: No
 - **Request Body**:
@@ -208,6 +225,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 4. Get User by ID
+
 - **Endpoint**: `GET /api/v1/users/{user_id}`
 - **Path Parameters**: `user_id` (*UUID string*)
 - **Response (`200 OK`)**: `UserResponse`
@@ -216,6 +234,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 5. Update User Profile
+
 - **Endpoint**: `PUT /api/v1/users/{user_id}`
 - **Path Parameters**: `user_id` (*UUID string*)
 - **Request Body** (all fields optional):
@@ -233,6 +252,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 6. Delete User Account
+
 - **Endpoint**: `DELETE /api/v1/users/{user_id}`
 - **Path Parameters**: `user_id` (*UUID string*)
 - **Response (`204 No Content`)**: Empty response body
@@ -242,6 +262,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ### Students
 
 #### 1. List Students
+
 - **Endpoint**: `GET /api/v1/students/`
 - **Query Parameters**:
   - `skip`, `limit`
@@ -267,6 +288,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 2. Create Student Record
+
 - **Endpoint**: `POST /api/v1/students/`
 - **Request Body**:
   ```json
@@ -286,6 +308,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 3. Get Student Details (with Linked User Profile)
+
 - **Endpoint**: `GET /api/v1/students/{student_id}`
 - **Path Parameters**: `student_id` (*string*)
 - **Response (`200 OK`)**:
@@ -313,12 +336,15 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 4. Get Student Academic Summary & Semester GPA History
+
 - **Endpoint**: `GET /api/v1/students/{student_id}/summary`
 - **Auth Required**: No
 - **Path Parameters**: `student_id` (*string*)
 - **Description**: Returns the student's overall Cumulative GPA (weighted average of passed courses with numeric grades), total degree credits accumulated (including exempted courses such as `LA1003`..`LA1009` with `final_score = 12.0`), total attempted credits, and chronological term GPA breakdown for each semester studied.
+
 > [!NOTE]
 > **Exempted Courses (`final_score = 12.0`)**: In university business rules, English exemption courses grant full academic credits towards graduation (`total_passed_credits`), but are excluded from the denominator in GPA weighted calculations to preserve numeric scale integrity.
+
 - **Response (`200 OK`)**:
   ```json
   {
@@ -354,6 +380,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 5. Get Enrolled Courses in Current Active Semester
+
 - **Endpoint**: `GET /api/v1/students/{student_id}/current`
 - **Auth Required**: No
 - **Path Parameters**: `student_id` (*string*)
@@ -394,6 +421,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 6. Update Student Record
+
 - **Endpoint**: `PUT /api/v1/students/{student_id}`
 - **Request Body** (all fields optional):
   ```json
@@ -412,6 +440,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 7. Delete Student Record
+
 - **Endpoint**: `DELETE /api/v1/students/{student_id}`
 - **Response (`204 No Content`)**
 
@@ -420,6 +449,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ### Lecturers
 
 #### 1. List Lecturers
+
 - **Endpoint**: `GET /api/v1/lecturers/`
 - **Query Parameters**:
   - `skip`, `limit`
@@ -430,6 +460,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 2. Create Lecturer Record
+
 - **Endpoint**: `POST /api/v1/lecturers/`
 - **Request Body**:
   ```json
@@ -444,12 +475,14 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 3. Get Lecturer Details (with Linked User Profile)
+
 - **Endpoint**: `GET /api/v1/lecturers/{lecturer_id}`
 - **Response (`200 OK`)**: `LecturerDetailResponse` (includes nested `user` object).
 
 ---
 
 #### 4. Get Classes Taught by Lecturer in Current Active Semester
+
 - **Endpoint**: `GET /api/v1/lecturers/{lecturer_id}/current` (Alias: `GET /api/v1/lecturers/{lecturer_id}/classes/current`)
 - **Auth Required**: No
 - **Path Parameters**: `lecturer_id` (*string*)
@@ -487,6 +520,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 5. Update Lecturer
+
 - **Endpoint**: `PUT /api/v1/lecturers/{lecturer_id}`
 - **Request Body**: `departments`, `user_id`
 - **Response (`200 OK`)**: `LecturerResponse`
@@ -494,6 +528,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 6. Delete Lecturer
+
 - **Endpoint**: `DELETE /api/v1/lecturers/{lecturer_id}`
 - **Response (`204 No Content`)**
 
@@ -502,6 +537,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ### Courses & Prerequisites
 
 #### 1. List Courses
+
 - **Endpoint**: `GET /api/v1/courses/`
 - **Query Parameters**: `skip`, `limit`, `search`
 - **Response (`200 OK`)**:
@@ -518,6 +554,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 2. Create Course
+
 - **Endpoint**: `POST /api/v1/courses/`
 - **Request Body**:
   ```json
@@ -532,6 +569,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 3. Get Course with Prerequisites & Assessment Weights
+
 - **Endpoint**: `GET /api/v1/courses/{course_code}`
 - **Response (`200 OK`)**:
   ```json
@@ -562,6 +600,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 4. Update Course
+
 - **Endpoint**: `PUT /api/v1/courses/{course_code}`
 - **Request Body**: `course_name`, `credits`
 - **Response (`200 OK`)**: `CourseResponse`
@@ -569,12 +608,14 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 5. Delete Course
+
 - **Endpoint**: `DELETE /api/v1/courses/{course_code}`
 - **Response (`204 No Content`)**
 
 ---
 
 #### 6. Add Prerequisite Relation
+
 - **Endpoint**: `POST /api/v1/courses/{course_code}/prerequisites`
 - **Request Body**:
   ```json
@@ -589,6 +630,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 7. Delete Prerequisite Relation
+
 - **Endpoint**: `DELETE /api/v1/courses/prerequisites/{prerequisite_id}`
 - **Path Parameters**: `prerequisite_id` (*integer*)
 - **Response (`204 No Content`)**
@@ -596,6 +638,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 8. Get Course Assessment Weights
+
 - **Endpoint**: `GET /api/v1/courses/{course_code}/assessment`
 - **Path Parameters**: `course_code` (*string*, e.g. `CO2003`)
 - **Description**: Returns the percentage breakdown of assessment components (quiz, lab, btl, giua_ky, cuoi_ky) and the course category.
@@ -618,6 +661,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ### Curriculums & Program Structures
 
 #### 1. List Curriculums
+
 - **Endpoint**: `GET /api/v1/curriculums/`
 - **Query Parameters**:
   - `cohort` (*string*, optional): Filter by cohort (e.g. `K20`, `K21`)
@@ -644,6 +688,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 2. Get Curriculum Details & Knowledge Blocks
+
 - **Endpoint**: `GET /api/v1/curriculums/{curriculum_id}`
 - **Path Parameters**: `curriculum_id` (*string*, e.g. `KHMT_K20`)
 - **Description**: Returns curriculum master data along with the grouped knowledge blocks and mapped course structures.
@@ -689,6 +734,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 3. Get Curriculum Course Structures
+
 - **Endpoint**: `GET /api/v1/curriculums/{curriculum_id}/structures`
 - **Path Parameters**: `curriculum_id` (*string*)
 - **Description**: Returns all mapped course allocations in the curriculum, including recommended semester, compulsory/elective designation (`BB`/`TC`), credits, and knowledge block metadata.
@@ -697,6 +743,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 4. List Knowledge Blocks
+
 - **Endpoint**: `GET /api/v1/curriculums/knowledge-blocks`
 - **Query Parameters**:
   - `category` (*string*, optional): Filter by category (e.g. `General`, `Core`, `Specialized`)
@@ -731,6 +778,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ### Semesters
 
 #### 1. List Semesters
+
 - **Endpoint**: `GET /api/v1/semesters/`
 - **Query Parameters**:
   - `skip`, `limit`
@@ -757,6 +805,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 2. Get Current Active Semester
+
 - **Endpoint**: `GET /api/v1/semesters/active`
 - **Auth Required**: No
 - **Response (`200 OK`)**:
@@ -773,6 +822,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 3. Create Semester
+
 - **Endpoint**: `POST /api/v1/semesters/`
 - **Request Body**:
   ```json
@@ -787,12 +837,14 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 4. Get Semester by Code
+
 - **Endpoint**: `GET /api/v1/semesters/{semester_code}`
 - **Response (`200 OK`)**: `SemesterResponse`
 
 ---
 
 #### 5. Update Semester
+
 - **Endpoint**: `PUT /api/v1/semesters/{semester_code}`
 - **Request Body** (optional fields): `academic_year`, `term`, `is_active`
 - **Response (`200 OK`)**: `SemesterResponse`
@@ -800,6 +852,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 6. Delete Semester
+
 - **Endpoint**: `DELETE /api/v1/semesters/{semester_code}`
 - **Response (`204 No Content`)**
 
@@ -808,6 +861,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ### Academic Classes
 
 #### 1. List Classes
+
 - **Endpoint**: `GET /api/v1/classes/`
 - **Query Parameters**:
   - `skip`, `limit`
@@ -820,6 +874,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 2. Create Class
+
 - **Endpoint**: `POST /api/v1/classes/`
 - **Request Body**:
   ```json
@@ -836,6 +891,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 3. Get Class Details (with Course, Semester, & Lecturer)
+
 - **Endpoint**: `GET /api/v1/classes/{class_id}`
 - **Response (`200 OK`)**:
   ```json
@@ -866,6 +922,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 4. Update Class
+
 - **Endpoint**: `PUT /api/v1/classes/{class_id}`
 - **Request Body**: `class_group`, `course_code`, `semester_code`, `lecturer_id`
 - **Response (`200 OK`)**: `AcademicClassResponse`
@@ -873,6 +930,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 5. Delete Class
+
 - **Endpoint**: `DELETE /api/v1/classes/{class_id}`
 - **Response (`204 No Content`)**
 
@@ -881,6 +939,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ### Enrollments & Grades
 
 #### 1. List Enrollments
+
 - **Endpoint**: `GET /api/v1/enrollments/`
 - **Query Parameters**:
   - `skip`, `limit`
@@ -894,6 +953,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 2. Register Student into Class
+
 - **Endpoint**: `POST /api/v1/enrollments/`
 - **Request Body**:
   ```json
@@ -911,6 +971,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 3. Get Student Transcript / Enrollments
+
 - **Endpoint**: `GET /api/v1/enrollments/students/{student_id}`
 - **Query Parameters**: `semester_code` (optional), `skip`, `limit`
 - **Response (`200 OK`)**: Array of all enrollment & grade records for this student.
@@ -918,6 +979,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 4. Get Class Grade Roster
+
 - **Endpoint**: `GET /api/v1/enrollments/classes/{class_id}`
 - **Query Parameters**: `skip`, `limit`
 - **Response (`200 OK`)**: Array of all student grade entries in this class.
@@ -925,6 +987,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 5. Update Grades and Status
+
 - **Endpoint**: `PUT /api/v1/enrollments/{enrollment_id}`
 - **Path Parameters**: `enrollment_id` (*UUID string*)
 - **Request Body** (all fields optional):
@@ -949,6 +1012,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ---
 
 #### 6. Delete Enrollment Record
+
 - **Endpoint**: `DELETE /api/v1/enrollments/{enrollment_id}`
 - **Response (`204 No Content`)**
 
@@ -957,12 +1021,145 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 ### System Health
 
 #### Health Check
+
 - **Endpoint**: `GET /health`
 - **Auth Required**: No
 - **Response (`200 OK`)**:
   ```json
   {
     "status": "ok"
+  }
+  ```
+
+---
+
+### Predictions & Explainable AI (XAI)
+
+#### 1. Check AI Model Service Health
+
+- **Endpoint**: `GET /api/v1/predictions/health`
+- **Auth Required**: No
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "status": "ok",
+    "service": "dacn-model-service",
+    "model_status": "loaded",
+    "fail_threshold": 0.9309,
+    "total_records_cached": 424158,
+    "metrics": {
+      "threshold": 0.93092,
+      "roc_auc": 0.9494,
+      "average_precision": 0.4321,
+      "accuracy": 0.9762,
+      "f1": 0.4464
+    }
+  }
+  ```
+
+---
+
+#### 2. Predict All Enrolled Courses for a Student (Term Dashboard)
+
+- **Endpoint**: `GET /api/v1/predictions/students/{student_id}`
+- **Alternative POST**: `POST /api/v1/predictions/student` with body `{"student_id": "2100512", "semester_code": "HK261"}`
+- **Auth Required**: Yes (`student` can only access own MSSV; `lecturer` / `admin` can access any student)
+- **Query Parameters**:
+  - `semester_code` (*string*, optional): Defaults to currently active semester (e.g. `HK261`)
+- **Response (`200 OK`)**: `StudentPredictionResponse`
+  ```json
+  {
+    "student_id": "2100512",
+    "semester_code": "HK261",
+    "total_courses": 2,
+    "at_risk_count": 0,
+    "predicted_semester_gpa4": 2.5,
+    "courses": [
+      {
+        "course_code": "CO2017",
+        "course_name": "Hệ điều hành",
+        "credits": 3,
+        "class_id": "HK261_CO2017_L01",
+        "class_group": "L01",
+        "lecturer_name": "Nguyễn Văn B",
+        "semester_code": "HK261",
+        "record_status": null,
+        "fail_probability": 0.0207,
+        "predicted_course_fail": 0,
+        "is_at_risk": false,
+        "risk_level": "LOW",
+        "predicted_score10": 6.15,
+        "predicted_gpa4": 2.0,
+        "current_marks": {
+          "quiz": null,
+          "lab": null,
+          "btl": null,
+          "giua_ky": 5.5
+        },
+        "top_shap_factors": [
+          {
+            "feature": "giua_ky",
+            "shap_value": -1.7865,
+            "impact": "DECREASE_RISK",
+            "description": "Điểm giữa kỳ (5.5) góp phần giảm nguy cơ rớt môn"
+          },
+          {
+            "feature": "prior_failed_course_count",
+            "shap_value": 1.3372,
+            "impact": "INCREASE_RISK",
+            "description": "Số môn đã từng rớt trong quá khứ (10 môn) làm tăng nguy cơ rớt môn"
+          }
+        ]
+      }
+    ]
+  }
+  ```
+
+---
+
+#### 3. Predict Single Course Outcome
+
+- **Endpoint**: `POST /api/v1/predictions/course`
+- **Auth Required**: Yes (`student` own ID or `lecturer` / `admin`)
+- **Request Body**:
+  ```json
+  {
+    "student_id": "2100512",
+    "course_code": "CO2017",
+    "semester_code": "HK261"
+  }
+  ```
+- **Response (`200 OK`)**: `CoursePredictionResponse`
+  ```json
+  {
+    "course_code": "CO2017",
+    "course_name": "Hệ điều hành",
+    "credits": 3,
+    "class_id": "HK261_CO2017_L01",
+    "class_group": "L01",
+    "lecturer_name": "Nguyễn Văn B",
+    "semester_code": "HK261",
+    "record_status": null,
+    "fail_probability": 0.0207,
+    "predicted_course_fail": 0,
+    "is_at_risk": false,
+    "risk_level": "LOW",
+    "predicted_score10": 6.15,
+    "predicted_gpa4": 2.0,
+    "current_marks": {
+      "quiz": null,
+      "lab": null,
+      "btl": null,
+      "giua_ky": 5.5
+    },
+    "top_shap_factors": [
+      {
+        "feature": "giua_ky",
+        "shap_value": -1.7865,
+        "impact": "DECREASE_RISK",
+        "description": "Điểm giữa kỳ (5.5) góp phần giảm nguy cơ rớt môn"
+      }
+    ]
   }
   ```
 
@@ -1366,6 +1563,72 @@ export interface EnrollmentUpdatePayload {
   final_gpa_4?: number | null;
   status?: string | null;
 }
+
+// ==========================================
+// Prediction & Explainable AI (XAI) Types
+// ==========================================
+export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+export type FeatureImpact = 'INCREASE_RISK' | 'DECREASE_RISK';
+
+export interface ShapFactor {
+  feature: string;
+  shap_value: number;
+  impact: FeatureImpact;
+  description: string;
+}
+
+export interface CoursePrediction {
+  course_code: string;
+  course_name: string | null;
+  credits: number | null;
+  class_id: string | null;
+  class_group: string | null;
+  lecturer_name: string | null;
+  semester_code: string;
+  record_status: string | null;
+  fail_probability: number;
+  predicted_course_fail: number; // 0 (Pass) or 1 (Fail)
+  is_at_risk: boolean;
+  risk_level: RiskLevel;
+  predicted_score10: number;
+  predicted_gpa4: number;
+  current_marks: {
+    quiz: number | null;
+    lab: number | null;
+    btl: number | null;
+    giua_ky: number | null;
+  };
+  top_shap_factors: ShapFactor[];
+}
+
+export interface StudentPrediction {
+  student_id: string;
+  semester_code: string;
+  total_courses: number;
+  at_risk_count: number;
+  predicted_semester_gpa4: number;
+  courses: CoursePrediction[];
+}
+
+export interface PredictCoursePayload {
+  student_id: string;
+  course_code: string;
+  semester_code?: string | null;
+}
+
+export interface PredictStudentPayload {
+  student_id: string;
+  semester_code?: string | null;
+}
+
+export interface ModelHealth {
+  status: string;
+  service: string;
+  model_status: 'loaded' | 'not_loaded';
+  fail_threshold: number;
+  total_records_cached: number;
+  metrics: Record<string, any>;
+}
 ```
 
 ---
@@ -1482,4 +1745,3 @@ apiClient.interceptors.response.use(
   }
 );
 ```
-
