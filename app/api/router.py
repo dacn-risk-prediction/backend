@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.routes import (
+    advising,
     auth,
     classes,
     courses,
@@ -25,4 +26,6 @@ api_router.include_router(semesters.router, prefix="/semesters", tags=["Semester
 api_router.include_router(classes.router, prefix="/classes", tags=["Classes"])
 api_router.include_router(enrollments.router, prefix="/enrollments", tags=["Enrollments"])
 api_router.include_router(predictions.router, prefix="/predictions", tags=["Predictions & XAI"])
+api_router.include_router(advising.router, prefix="/advising", tags=["Academic Advising & Messaging"])
+
 

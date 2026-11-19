@@ -370,6 +370,16 @@ FastAPI generates automated, interactive API documentation:
 | **Enrollments**    | `GET`                      | `/api/v1/enrollments/{enrollment_id}`             | Get single enrollment record                                              |
 | **Enrollments**    | `PUT`                      | `/api/v1/enrollments/{enrollment_id}`             | Grade entry (quiz, lab, btl, midterm, final, GPA)                         |
 | **Enrollments**    | `DELETE`                   | `/api/v1/enrollments/{enrollment_id}`             | Delete enrollment record                                                  |
+| **Predictions**    | `GET`                      | `/api/v1/predictions/health`                      | Health check & metadata for AI inference microservice                     |
+| **Predictions**    | `GET`, `POST`            | `/api/v1/predictions/students/{student_id}`       | AI failure prediction, GPA & SHAP explanations for student courses        |
+| **Predictions**    | `POST`                     | `/api/v1/predictions/course`                      | Detailed outcome prediction & XAI factors for single course enrollment    |
+| **Advising**       | `GET`                      | `/api/v1/advising/unread-count`                   | Unread message badge count for current user                               |
+| **Advising**       | `GET`, `POST`            | `/api/v1/advising/sessions`                       | List or start advising conversations (idempotent get_or_create)           |
+| **Advising**       | `GET`, `POST`            | `/api/v1/advising/sessions/{id}/messages`         | Chronological message history (auto-mark read) and send replies/notices   |
+| **Advising**       | `GET`, `POST`            | `/api/v1/advising/sessions/{id}/appointments`     | Schedule advising meetings (office/online consultation)                   |
+| **Advising**       | `PATCH`                    | `/api/v1/advising/appointments/{id}/status`       | Confirm or cancel advising appointment                                    |
+| **Advising**       | `GET`, `POST`            | `/api/v1/advising/sessions/{id}/tasks`            | Manage learning improvement action tasks for at-risk students             |
+| **Advising**       | `PATCH`                    | `/api/v1/advising/tasks/{id}/toggle`              | Toggle task completion status                                             |
 
 ### Key Academic Analytics & Business Features
 

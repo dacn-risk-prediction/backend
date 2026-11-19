@@ -23,6 +23,8 @@
    - [Semesters](#semesters)
    - [Academic Classes](#academic-classes)
    - [Enrollments &amp; Grades](#enrollments--grades)
+   - [Predictions &amp; Explainable AI (XAI)](#predictions--explainable-ai-xai)
+   - [Academic Advising &amp; Two-Way Messaging](#academic-advising--two-way-messaging)
    - [System Health](#system-health)
 5. [TypeScript Interfaces &amp; DTOs](#5-typescript-interfaces--dtos)
 6. [Axios API Client Example with Token Refresh](#6-axios-api-client-example-with-token-refresh)
@@ -1165,6 +1167,177 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 
 ---
 
+### Academic Advising & Two-Way Messaging
+
+#### 1. Get Unread Notification Count
+- **Endpoint**: `GET /api/v1/advising/unread-count`
+- **Auth Required**: Yes (Student or Lecturer)
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "unread_count": 2
+  }
+  ```
+
+---
+
+#### 2. List Advising Sessions
+- **Endpoint**: `GET /api/v1/advising/sessions`
+- **Auth Required**: Yes (Returns sessions involving the authenticated user)
+- **Response (`200 OK`)**: Array of `AdvisingSessionResponse`
+  ```json
+  [
+    {
+      "id": "3a9cbc45-0811-4655-9486-0873774e3a7b",
+      "student_id": "2028899",
+      "student_name": "Trần Quang Hiếu",
+      "lecturer_id": "GV00001",
+      "lecturer_name": "Ngô Quốc An",
+      "course_code": "CO1005",
+      "course_name": "Nhập môn Điện toán",
+      "semester_code": "HK261",
+      "topic": "Cố vấn can thiệp rủi ro giữa kỳ",
+      "risk_level": "CRITICAL",
+      "status": "ACTIVE",
+      "unread_count": 1,
+      "last_message": {
+        "id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+        "session_id": "3a9cbc45-0811-4655-9486-0873774e3a7b",
+        "sender_id": "GV00001",
+        "sender_role": "lecturer",
+        "sender_name": "Ngô Quốc An",
+        "message_type": "NOTICE",
+        "content": "Em cần chú ý ôn tập kỹ phần bài tập lớn và lý thuyết giữa kỳ nhé.",
+        "attachments": null,
+        "is_read": false,
+        "read_at": null,
+        "created_at": "2026-11-19T14:30:00Z"
+      },
+      "last_message_at": "2026-11-19T14:30:00Z",
+      "created_at": "2026-11-19T14:00:00Z",
+      "updated_at": "2026-11-19T14:30:00Z"
+    }
+  ]
+  ```
+
+---
+
+#### 3. Create or Retrieve Advising Session (get_or_create)
+- **Endpoint**: `POST /api/v1/advising/sessions`
+- **Auth Required**: Yes (Student or Lecturer)
+- **Request Body**:
+  ```json
+  {
+    "student_id": "2028899",
+    "course_code": "CO1005",
+    "semester_code": "HK261",
+    "topic": "Cố vấn can thiệp rủi ro giữa kỳ",
+    "risk_level": "CRITICAL",
+    "lecturer_id": "GV00001"
+  }
+  ```
+- **Response (`201 Created` or `200 OK`)**: `AdvisingSessionResponse`
+
+---
+
+#### 4. List Messages in Session (Auto-Marks Unread as Read)
+- **Endpoint**: `GET /api/v1/advising/sessions/{session_id}/messages`
+- **Auth Required**: Yes (Session owner only)
+- **Query Parameters**:
+  - `limit` (*integer*, optional, default: 50, max: 100)
+  - `offset` (*integer*, optional, default: 0)
+- **Response (`200 OK`)**: Array of `AdvisingMessageResponse`
+
+---
+
+#### 5. Send Message / Notice inside Session
+- **Endpoint**: `POST /api/v1/advising/sessions/{session_id}/messages`
+- **Auth Required**: Yes (Session owner only)
+- **Request Body**:
+  ```json
+  {
+    "content": "Dạ Thầy cho em xin tài liệu tham khảo thêm với ạ!",
+    "message_type": "REPLY",
+    "attachments": null
+  }
+  ```
+- **Response (`201 Created`)**: `AdvisingMessageResponse`
+
+---
+
+#### 6. List Appointments in Session
+- **Endpoint**: `GET /api/v1/advising/sessions/{session_id}/appointments`
+- **Auth Required**: Yes (Session owner only)
+- **Response (`200 OK`)**: Array of `AdvisingAppointmentResponse`
+
+---
+
+#### 7. Create Appointment
+- **Endpoint**: `POST /api/v1/advising/sessions/{session_id}/appointments`
+- **Auth Required**: Yes (Session owner only)
+- **Request Body**:
+  ```json
+  {
+    "subject": "Gặp trực tiếp tư vấn phương án ôn thi",
+    "time_slot": "Thứ Năm: 14:00 - 15:00",
+    "meeting_type": "OFFICE",
+    "location": "P.503 Nhà H6",
+    "notes": "Mang theo đề cương chi tiết"
+  }
+  ```
+- **Response (`201 Created`)**: `AdvisingAppointmentResponse`
+
+---
+
+#### 8. Update Appointment Status
+- **Endpoint**: `PATCH /api/v1/advising/appointments/{appointment_id}/status`
+- **Auth Required**: Yes (Session owner only)
+- **Request Body**:
+  ```json
+  {
+    "status": "CONFIRMED"
+  }
+  ```
+- **Response (`200 OK`)**: `AdvisingAppointmentResponse`
+
+---
+
+#### 9. List Action Tasks in Session
+- **Endpoint**: `GET /api/v1/advising/sessions/{session_id}/tasks`
+- **Auth Required**: Yes (Session owner only)
+- **Response (`200 OK`)**: Array of `AdvisingActionTaskResponse`
+
+---
+
+#### 10. Assign Action Task
+- **Endpoint**: `POST /api/v1/advising/sessions/{session_id}/tasks`
+- **Auth Required**: Yes (Session owner only)
+- **Request Body**:
+  ```json
+  {
+    "title": "Hoàn thành bài tập tuần 10",
+    "description": "Nộp bài lên hệ thống BKeL",
+    "deadline": "30/11/2026",
+    "priority": "HIGH"
+  }
+  ```
+- **Response (`201 Created`)**: `AdvisingActionTaskResponse`
+
+---
+
+#### 11. Toggle Action Task Completion
+- **Endpoint**: `PATCH /api/v1/advising/tasks/{task_id}/toggle`
+- **Auth Required**: Yes (Session owner only)
+- **Request Body**:
+  ```json
+  {
+    "completed": true
+  }
+  ```
+- **Response (`200 OK`)**: `AdvisingActionTaskResponse`
+
+---
+
 ## 5. TypeScript Interfaces & DTOs
 
 Save the following definitions into `src/types/api.ts` in your frontend project:
@@ -1628,6 +1801,113 @@ export interface ModelHealth {
   fail_threshold: number;
   total_records_cached: number;
   metrics: Record<string, any>;
+}
+
+// ==========================================
+// Academic Advising & Messaging Types
+// ==========================================
+export type AdvisingRiskLevel = 'CRITICAL' | 'WARNING' | 'SAFE';
+export type AdvisingSessionStatus = 'ACTIVE' | 'RESOLVED' | 'CLOSED';
+export type AdvisingMessageType = 'NOTICE' | 'REPLY' | 'TASK_NOTICE' | 'APPOINTMENT_NOTICE';
+export type AppointmentStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
+export type TaskPriority = 'HIGH' | 'MEDIUM' | 'NORMAL';
+
+export interface AdvisingMessage {
+  id: string; // UUID
+  session_id: string; // UUID
+  sender_id: string;
+  sender_role: 'student' | 'lecturer' | 'admin' | string;
+  sender_name: string;
+  message_type: AdvisingMessageType;
+  content: string;
+  attachments?: any | null;
+  is_read: boolean;
+  read_at?: string | null;
+  created_at: string;
+}
+
+export interface AdvisingSession {
+  id: string; // UUID
+  student_id: string;
+  student_name?: string | null;
+  lecturer_id: string;
+  lecturer_name?: string | null;
+  course_code: string;
+  course_name?: string | null;
+  semester_code: string;
+  topic: string;
+  risk_level: AdvisingRiskLevel;
+  status: AdvisingSessionStatus;
+  unread_count: number;
+  last_message?: AdvisingMessage | null;
+  last_message_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdvisingSessionCreatePayload {
+  student_id: string;
+  course_code: string;
+  semester_code?: string;
+  topic: string;
+  risk_level?: AdvisingRiskLevel;
+  lecturer_id?: string;
+}
+
+export interface AdvisingMessageCreatePayload {
+  content: string;
+  message_type?: AdvisingMessageType;
+  attachments?: any | null;
+}
+
+export interface AdvisingAppointment {
+  id: string; // UUID
+  session_id: string; // UUID
+  student_id: string;
+  lecturer_id: string;
+  course_code: string;
+  subject: string;
+  time_slot: string;
+  meeting_type: 'OFFICE' | 'ONLINE';
+  location: string;
+  notes?: string | null;
+  status: AppointmentStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdvisingAppointmentCreatePayload {
+  subject: string;
+  time_slot: string;
+  meeting_type?: 'OFFICE' | 'ONLINE';
+  location: string;
+  notes?: string | null;
+}
+
+export interface AdvisingActionTask {
+  id: string; // UUID
+  session_id: string; // UUID
+  student_id: string;
+  lecturer_id: string;
+  course_code: string;
+  title: string;
+  description?: string | null;
+  deadline: string;
+  priority: TaskPriority;
+  completed: boolean;
+  completed_at?: string | null;
+  created_at: string;
+}
+
+export interface AdvisingActionTaskCreatePayload {
+  title: string;
+  description?: string | null;
+  deadline: string;
+  priority?: TaskPriority;
+}
+
+export interface UnreadCountResponse {
+  unread_count: number;
 }
 ```
 
