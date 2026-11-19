@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.academic_class import AcademicClass
 from app.models.course import Course
 from app.models.enrollment import Enrollment
+from app.models.lecturer import Lecturer
 from app.models.semester import Semester
+from app.models.user import User
 from app.schemas.academic_class import AcademicClassCreate, AcademicClassUpdate
 
 
@@ -185,6 +187,29 @@ class AcademicClassRepository:
         )
         records = db.execute(statement).all()
         return [dict(record._mapping) for record in records]
+
+    def get_class_prediction_metadata(
+        self, db: Session, *, class_id: str
+    ) -> dict[str, Any] | None:
+        """Fetch class metadata including course info, section group, and lecturer details."""
+        statement = (
+            select(
+                AcademicClass.class_id,
+                AcademicClass.class_group,
+                AcademicClass.course_code,
+                AcademicClass.semester_code,
+                AcademicClass.lecturer_id,
+                Course.course_name,
+                Course.credits,
+                User.name.label("lecturer_name"),
+            )
+            .outerjoin(Course, AcademicClass.course_code == Course.course_code)
+            .outerjoin(Lecturer, AcademicClass.lecturer_id == Lecturer.lecturer_id)
+            .outerjoin(User, Lecturer.user_id == User.id)
+            .where(AcademicClass.class_id == class_id)
+        )
+        row = db.execute(statement).first()
+        return dict(row._mapping) if row else None
 
 
 academic_class_repo = AcademicClassRepository()

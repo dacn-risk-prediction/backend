@@ -373,6 +373,7 @@ FastAPI generates automated, interactive API documentation:
 | **Predictions**    | `GET`                      | `/api/v1/predictions/health`                      | Health check & metadata for AI inference microservice                     |
 | **Predictions**    | `GET`, `POST`            | `/api/v1/predictions/students/{student_id}`       | AI failure prediction, GPA & SHAP explanations for student courses        |
 | **Predictions**    | `POST`                     | `/api/v1/predictions/course`                      | Detailed outcome prediction & XAI factors for single course enrollment    |
+| **Predictions**    | `GET`, `POST`            | `/api/v1/predictions/classes/{class_id}`          | Class batch risk prediction, analytics & student rankings for lecturers    |
 | **Advising**       | `GET`                      | `/api/v1/advising/unread-count`                   | Unread message badge count for current user                               |
 | **Advising**       | `GET`, `POST`            | `/api/v1/advising/sessions`                       | List or start advising conversations (idempotent get_or_create)           |
 | **Advising**       | `GET`, `POST`            | `/api/v1/advising/sessions/{id}/messages`         | Chronological message history (auto-mark read) and send replies/notices   |

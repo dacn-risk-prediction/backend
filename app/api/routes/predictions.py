@@ -11,11 +11,18 @@ Adheres to .agent/rules/fastapi-backend.md:
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import CurrentUser, SessionDep
-from app.core.security import ROLE_STUDENT
-from app.repositories import course_repo, enrollment_repo, student_repo
+from app.core.security import ROLE_ADMIN, ROLE_LECTURER, ROLE_STUDENT
+from app.repositories import (
+    academic_class_repo,
+    course_repo,
+    enrollment_repo,
+    student_repo,
+)
 from app.schemas.prediction import (
+    ClassPredictionResponse,
     CoursePredictionResponse,
     ModelHealthResponse,
+    PredictClassRequest,
     PredictCourseRequest,
     PredictStudentRequest,
     StudentPredictionResponse,
@@ -169,4 +176,76 @@ async def post_student_term_prediction(
         current_user=current_user,
         db=db,
         semester_code=payload.semester_code,
+    )
+
+
+@router.get(
+    "/classes/{class_id}",
+    response_model=ClassPredictionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Predict failure risks and batch analytics for an entire class (Lecturer / Admin)",
+)
+async def get_class_prediction(
+    class_id: str,
+    current_user: CurrentUser,
+    db: SessionDep,
+    include_shap: bool = Query(
+        default=True,
+        description="Whether to include top SHAP explanatory risk factors per student",
+    ),
+) -> ClassPredictionResponse:
+    """Predict risk, expected score, GPA, and class-level risk drivers for all enrolled students in a class."""
+    if current_user.role == ROLE_STUDENT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: students cannot access class-wide batch predictions",
+        )
+
+    class_meta = academic_class_repo.get_class_prediction_metadata(db, class_id=class_id)
+    if not class_meta:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Class '{class_id}' not found in database",
+        )
+
+    if current_user.role == ROLE_LECTURER and class_meta.get("lecturer_id") != current_user.user_code:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: lecturers can only access predictions for classes they teach",
+        )
+
+    prediction = await model_client.predict_class(class_id=class_id, include_shap=include_shap)
+
+    # Enrich metadata from Neon DB
+    prediction["course_name"] = class_meta.get("course_name")
+    prediction["credits"] = class_meta.get("credits")
+    prediction["class_group"] = class_meta.get("class_group")
+    prediction["lecturer_name"] = class_meta.get("lecturer_name")
+
+    # Enrich student full names
+    student_names = enrollment_repo.get_student_names_by_class(db, class_id=class_id)
+    for student_item in prediction.get("students", []):
+        sid = student_item.get("student_id")
+        student_item["student_name"] = student_names.get(sid)
+
+    return ClassPredictionResponse.model_validate(prediction)
+
+
+@router.post(
+    "/class",
+    response_model=ClassPredictionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Predict risk and batch analytics for an entire class (POST payload)",
+)
+async def post_class_prediction(
+    payload: PredictClassRequest,
+    current_user: CurrentUser,
+    db: SessionDep,
+) -> ClassPredictionResponse:
+    """Alternative POST endpoint accepting a JSON body to predict class outcomes for lecturers/admins."""
+    return await get_class_prediction(
+        class_id=payload.class_id,
+        current_user=current_user,
+        db=db,
+        include_shap=payload.include_shap,
     )

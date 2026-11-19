@@ -114,5 +114,41 @@ class ModelServiceClient:
                 detail="AI Model Service is unreachable or timed out. Please check if serve.py is running.",
             )
 
+    async def predict_class(
+        self,
+        class_id: str,
+        include_shap: bool = True,
+    ) -> dict[str, Any]:
+        """Call POST /predict/class on Model Service for batch class prediction and analytics."""
+        url = f"{self.base_url}/predict/class"
+        payload: dict[str, Any] = {
+            "class_id": str(class_id).strip(),
+            "include_shap": include_shap,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                res = await client.post(url, json=payload)
+                if res.status_code == status.HTTP_404_NOT_FOUND:
+                    detail = res.json().get("detail", f"Class '{class_id}' not found in enrollment records.")
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+                if res.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
+                    detail = res.json().get("detail", "Models not yet loaded into memory.")
+                    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
+                res.raise_for_status()
+                return res.json()
+        except HTTPException:
+            raise
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Model Service error: {e.response.text}",
+            )
+        except (httpx.RequestError, httpx.TimeoutException):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="AI Model Service is unreachable or timed out. Please check if serve.py is running.",
+            )
+
 
 model_client = ModelServiceClient()

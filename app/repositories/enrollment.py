@@ -8,6 +8,7 @@ from app.models.academic_class import AcademicClass
 from app.models.course import Course
 from app.models.enrollment import Enrollment
 from app.models.lecturer import Lecturer
+from app.models.student import Student
 from app.models.user import User
 from app.schemas.enrollment import EnrollmentCreate, EnrollmentUpdate
 
@@ -442,6 +443,25 @@ class EnrollmentRepository:
         )
         records = db.execute(statement).all()
         return [dict(record._mapping) for record in records]
+
+    def get_student_names_by_class(
+        self,
+        db: Session,
+        *,
+        class_id: str,
+    ) -> dict[str, str]:
+        """Fetch mapping of student_id -> student full name for all students enrolled in a class."""
+        statement = (
+            select(
+                Enrollment.student_id,
+                User.name.label("student_name"),
+            )
+            .outerjoin(Student, Enrollment.student_id == Student.student_id)
+            .outerjoin(User, Student.user_id == User.id)
+            .where(Enrollment.class_id == class_id)
+        )
+        records = db.execute(statement).all()
+        return {r.student_id: r.student_name for r in records if r.student_name}
 
 
 enrollment_repo = EnrollmentRepository()
