@@ -247,9 +247,30 @@ class ProgramStructureResponse(ProgramStructureBase):
 
 
 class ProgramStructureDetailResponse(ProgramStructureResponse):
-    """Detailed program structure response including curriculum and knowledge block metadata."""
+    """Detailed program structure response including knowledge block metadata."""
     curriculum: CurriculumResponse | None = Field(default=None, description="Linked curriculum metadata")
     knowledge_block: KnowledgeBlockResponse | None = Field(default=None, description="Linked knowledge block metadata")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CurriculumStructureItem(ProgramStructureResponse):
+    """Course allocation entry inside a curriculum detail response."""
+    knowledge_block: KnowledgeBlockResponse | None = Field(
+        default=None,
+        description="Linked knowledge block metadata",
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CurriculumDetailResponse(CurriculumResponse):
+    """Detailed curriculum response including grouped course structures and knowledge blocks."""
+    structures: list[CurriculumStructureItem] = Field(
+        default_factory=list,
+        validation_alias="program_structures",
+        description="Mapped course allocations and knowledge blocks in this curriculum",
+    )
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 

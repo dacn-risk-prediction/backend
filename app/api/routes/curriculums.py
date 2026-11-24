@@ -3,9 +3,10 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.api.deps import SessionDep
 from app.repositories import curriculum_repo, knowledge_block_repo, program_structure_repo
 from app.schemas.curriculum import (
+    CurriculumDetailResponse,
     CurriculumResponse,
+    CurriculumStructureItem,
     KnowledgeBlockResponse,
-    ProgramStructureResponse,
 )
 
 router = APIRouter()
@@ -36,21 +37,22 @@ def list_curriculums(
 )
 def list_knowledge_blocks(
     db: SessionDep,
+    category: str | None = Query(default=None, description="Filter by category (e.g. General, Core, Specialized)"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
 ):
     """Retrieve list of defined academic knowledge blocks."""
-    return knowledge_block_repo.get_multi(db, skip=skip, limit=limit)
+    return knowledge_block_repo.get_multi(db, skip=skip, limit=limit, category=category)
 
 
 @router.get(
     "/{curriculum_id}",
-    response_model=CurriculumResponse,
+    response_model=CurriculumDetailResponse,
     status_code=status.HTTP_200_OK,
     summary="Get curriculum program details by ID",
 )
 def get_curriculum(curriculum_id: str, db: SessionDep):
-    """Retrieve specific curriculum program by its identifier."""
+    """Retrieve specific curriculum program with its course structures and knowledge blocks."""
     curriculum = curriculum_repo.get_by_id(db, curriculum_id)
     if not curriculum:
         raise HTTPException(
@@ -62,7 +64,7 @@ def get_curriculum(curriculum_id: str, db: SessionDep):
 
 @router.get(
     "/{curriculum_id}/structures",
-    response_model=list[ProgramStructureResponse],
+    response_model=list[CurriculumStructureItem],
     status_code=status.HTTP_200_OK,
     summary="Get course allocations and structure for a curriculum",
 )

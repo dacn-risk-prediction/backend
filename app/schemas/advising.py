@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -100,7 +100,7 @@ class AdvisingAppointmentCreate(AdvisingAppointmentBase):
 
 class AdvisingAppointmentStatusUpdate(BaseModel):
     """Payload to update appointment status."""
-    status: str = Field(
+    status: Literal["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"] = Field(
         ...,
         description="New status: 'CONFIRMED', 'CANCELLED', 'COMPLETED', or 'PENDING'",
         examples=["CONFIRMED"],

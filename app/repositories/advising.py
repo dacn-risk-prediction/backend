@@ -76,12 +76,13 @@ class AdvisingRepository:
         db: Session,
         *,
         obj_in: AdvisingSessionCreate,
+        student_id: str,
         lecturer_id: str,
     ) -> tuple[AdvisingSession, bool]:
         """Fetch existing session or create a new one (get_or_create pattern)."""
         existing = self.get_session_by_unique(
             db,
-            student_id=obj_in.student_id,
+            student_id=student_id,
             lecturer_id=lecturer_id,
             course_code=obj_in.course_code,
             semester_code=obj_in.semester_code,
@@ -90,7 +91,7 @@ class AdvisingRepository:
             return existing, False
 
         new_session = AdvisingSession(
-            student_id=obj_in.student_id,
+            student_id=student_id,
             lecturer_id=lecturer_id,
             course_code=obj_in.course_code,
             semester_code=obj_in.semester_code,
@@ -102,6 +103,60 @@ class AdvisingRepository:
         db.commit()
         db.refresh(new_session)
         return self.get_session_by_id(db, new_session.id) or new_session, True
+
+    def build_session_response(
+        self,
+        db: Session,
+        *,
+        session: AdvisingSession,
+        viewer_code: str,
+    ) -> AdvisingSessionResponse:
+        """Build a session summary response with real unread_count and last_message."""
+        unread_stmt = select(func.count(AdvisingMessage.id)).where(
+            AdvisingMessage.session_id == session.id,
+            AdvisingMessage.is_read.is_(False),
+            AdvisingMessage.sender_id != viewer_code,
+        )
+        unread_count = db.scalar(unread_stmt) or 0
+
+        last_msg_stmt = (
+            select(AdvisingMessage)
+            .where(AdvisingMessage.session_id == session.id)
+            .order_by(desc(AdvisingMessage.created_at))
+            .limit(1)
+        )
+        last_message = db.scalar(last_msg_stmt)
+
+        student_name = (
+            session.student.user.name
+            if session.student and session.student.user
+            else session.student_id
+        )
+        lecturer_name = (
+            session.lecturer.user.name
+            if session.lecturer and session.lecturer.user
+            else session.lecturer_id
+        )
+        course_name = session.course.course_name if session.course else session.course_code
+
+        return AdvisingSessionResponse(
+            id=session.id,
+            student_id=session.student_id,
+            student_name=student_name,
+            lecturer_id=session.lecturer_id,
+            lecturer_name=lecturer_name,
+            course_code=session.course_code,
+            course_name=course_name,
+            semester_code=session.semester_code,
+            topic=session.topic,
+            risk_level=session.risk_level,
+            status=session.status,
+            unread_count=unread_count,
+            last_message=last_message,
+            last_message_at=session.last_message_at,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+        )
 
     def list_sessions_for_user(
         self,

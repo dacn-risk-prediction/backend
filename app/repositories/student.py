@@ -92,6 +92,10 @@ class StudentRepository:
             student_id=obj_in.student_id,
             cohort=obj_in.cohort,
             major=obj_in.major,
+            program=obj_in.program,
+            specialization=obj_in.specialization,
+            english_pass=obj_in.english_pass,
+            ctxh_days=obj_in.ctxh_days,
             user_id=obj_in.user_id,
         )
         db.add(db_obj)

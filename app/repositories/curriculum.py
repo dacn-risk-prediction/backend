@@ -90,9 +90,19 @@ class KnowledgeBlockRepository:
         statement = select(KnowledgeBlock).where(KnowledgeBlock.block_id == block_id)
         return db.scalar(statement)
 
-    def get_multi(self, db: Session, *, skip: int = 0, limit: int = 100) -> list[KnowledgeBlock]:
-        """Fetch list of knowledge blocks."""
-        statement = select(KnowledgeBlock).order_by(KnowledgeBlock.block_id).offset(skip).limit(limit)
+    def get_multi(
+        self,
+        db: Session,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        category: str | None = None,
+    ) -> list[KnowledgeBlock]:
+        """Fetch list of knowledge blocks with optional category filter."""
+        statement = select(KnowledgeBlock)
+        if category:
+            statement = statement.where(KnowledgeBlock.category.ilike(f"%{category}%"))
+        statement = statement.order_by(KnowledgeBlock.block_id).offset(skip).limit(limit)
         return list(db.scalars(statement).all())
 
     def create(self, db: Session, *, obj_in: KnowledgeBlockCreate) -> KnowledgeBlock:

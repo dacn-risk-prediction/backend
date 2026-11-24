@@ -117,34 +117,17 @@ def create_or_get_session(
             detail=f"Student '{student_id}' does not exist",
         )
 
-    session, created = advising_repo.get_or_create_session(
+    session, _ = advising_repo.get_or_create_session(
         db,
         obj_in=payload,
+        student_id=student_id,
         lecturer_id=lecturer_id,
     )
 
-    # Return formatted response
-    student_name = session.student.user.name if session.student and session.student.user else session.student_id
-    lecturer_name = session.lecturer.user.name if session.lecturer and session.lecturer.user else session.lecturer_id
-    course_name = session.course.course_name if session.course else session.course_code
-
-    return AdvisingSessionResponse(
-        id=session.id,
-        student_id=session.student_id,
-        student_name=student_name,
-        lecturer_id=session.lecturer_id,
-        lecturer_name=lecturer_name,
-        course_code=session.course_code,
-        course_name=course_name,
-        semester_code=session.semester_code,
-        topic=session.topic,
-        risk_level=session.risk_level,
-        status=session.status,
-        unread_count=0,
-        last_message=None,
-        last_message_at=session.last_message_at,
-        created_at=session.created_at,
-        updated_at=session.updated_at,
+    return advising_repo.build_session_response(
+        db,
+        session=session,
+        viewer_code=current_user.user_code,
     )
 
 
@@ -157,27 +140,10 @@ def create_or_get_session(
 def get_session_details(session_id: uuid.UUID, current_user: CurrentUser, db: SessionDep):
     """Retrieve metadata of a specific advising session."""
     session = _get_and_verify_session(session_id, current_user, db)
-    student_name = session.student.user.name if session.student and session.student.user else session.student_id
-    lecturer_name = session.lecturer.user.name if session.lecturer and session.lecturer.user else session.lecturer_id
-    course_name = session.course.course_name if session.course else session.course_code
-
-    return AdvisingSessionResponse(
-        id=session.id,
-        student_id=session.student_id,
-        student_name=student_name,
-        lecturer_id=session.lecturer_id,
-        lecturer_name=lecturer_name,
-        course_code=session.course_code,
-        course_name=course_name,
-        semester_code=session.semester_code,
-        topic=session.topic,
-        risk_level=session.risk_level,
-        status=session.status,
-        unread_count=0,
-        last_message=None,
-        last_message_at=session.last_message_at,
-        created_at=session.created_at,
-        updated_at=session.updated_at,
+    return advising_repo.build_session_response(
+        db,
+        session=session,
+        viewer_code=current_user.user_code,
     )
 
 
@@ -309,6 +275,13 @@ def update_appointment_status(
             detail=f"Appointment '{appointment_id}' not found",
         )
     _get_and_verify_session(appointment.session_id, current_user, db)
+
+    if current_user.role == ROLE_STUDENT and payload.status not in {"CONFIRMED", "CANCELLED"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: students can only confirm or cancel appointments",
+        )
+
     return advising_repo.update_appointment_status(db, appointment=appointment, new_status=payload.status)
 
 
@@ -341,6 +314,11 @@ def create_task(
     db: SessionDep,
 ):
     """Assign a learning action task to the student."""
+    if current_user.role not in {ROLE_LECTURER, ROLE_ADMIN}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: only lecturers or admins can assign action tasks",
+        )
     session = _get_and_verify_session(session_id, current_user, db)
     task = advising_repo.create_task(db, session=session, obj_in=payload)
 
