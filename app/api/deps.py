@@ -99,5 +99,16 @@ def get_current_student(current_user: CurrentUser) -> User:
     return current_user
 
 
+def get_current_admin(current_user: CurrentUser) -> User:
+    """Enforce admin role requirement."""
+    if current_user.role != ROLE_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: admin role required",
+        )
+    return current_user
+
+
+CurrentAdmin = Annotated[User, Depends(get_current_admin)]
 CurrentLecturer = Annotated[User, Depends(get_current_lecturer)]
 CurrentStudent = Annotated[User, Depends(get_current_student)]
