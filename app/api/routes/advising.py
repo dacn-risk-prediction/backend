@@ -8,7 +8,7 @@ Adheres strictly to .agent/rules/fastapi-backend.md:
 """
 
 import uuid
-from typing import Annotated
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -26,8 +26,10 @@ from app.schemas.advising import (
     AdvisingAppointmentStatusUpdate,
     AdvisingMessageCreate,
     AdvisingMessageResponse,
+    AdvisingNotificationListResponse,
     AdvisingSessionCreate,
     AdvisingSessionResponse,
+    MarkReadResponse,
     UnreadCountResponse,
 )
 
@@ -155,7 +157,7 @@ def get_session_details(session_id: uuid.UUID, current_user: CurrentUser, db: Se
     "/sessions/{session_id}/messages",
     response_model=list[AdvisingMessageResponse],
     status_code=status.HTTP_200_OK,
-    summary="List messages in an advising session and mark as read",
+    summary="List messages in an advising session",
 )
 def get_session_messages(
     session_id: uuid.UUID,
@@ -163,11 +165,81 @@ def get_session_messages(
     db: SessionDep,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    mark_read: bool = Query(
+        default=False,
+        description="If true, also marks incoming messages in this session as read",
+    ),
 ):
-    """Retrieve message history for an advising session. Automatically marks received messages as read."""
+    """Retrieve message history for an advising session without mutating read state by default."""
     _get_and_verify_session(session_id, current_user, db)
-    advising_repo.mark_session_messages_as_read(db, session_id=session_id, reader_id=current_user.user_code)
+    if mark_read:
+        advising_repo.mark_session_messages_as_read(
+            db, session_id=session_id, reader_id=current_user.user_code
+        )
     return advising_repo.get_session_messages(db, session_id=session_id, limit=limit, offset=offset)
+
+
+@router.post(
+    "/sessions/{session_id}/read",
+    response_model=MarkReadResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Mark all incoming messages in a session as read",
+)
+def mark_session_read(
+    session_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: SessionDep,
+):
+    """Explicitly mark incoming messages in an advising session as read."""
+    _get_and_verify_session(session_id, current_user, db)
+    marked_count = advising_repo.mark_session_messages_as_read(
+        db, session_id=session_id, reader_id=current_user.user_code
+    )
+    unread_count = advising_repo.count_total_unread_for_user(
+        db, user_code=current_user.user_code, role=current_user.role
+    )
+    return MarkReadResponse(marked_count=marked_count, unread_count=unread_count)
+
+
+@router.post(
+    "/read-all",
+    response_model=MarkReadResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Mark all incoming advising notifications as read",
+)
+def mark_all_notifications_read(
+    current_user: CurrentUser,
+    db: SessionDep,
+):
+    """Mark every unread advising notification for the current user as read."""
+    marked_count = advising_repo.mark_all_messages_as_read(
+        db, user_code=current_user.user_code, role=current_user.role
+    )
+    return MarkReadResponse(marked_count=marked_count, unread_count=0)
+
+
+@router.get(
+    "/notifications",
+    response_model=AdvisingNotificationListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="List individual advising notification events newest-first",
+)
+def list_notifications(
+    current_user: CurrentUser,
+    db: SessionDep,
+    direction: Literal["all", "received", "sent"] = Query(default="all"),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    """Fetch paginated individual advising notification items for the header bell dropdown."""
+    return advising_repo.list_notifications_for_user(
+        db,
+        user_code=current_user.user_code,
+        role=current_user.role,
+        direction=direction,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post(
@@ -274,7 +346,7 @@ def update_appointment_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Appointment '{appointment_id}' not found",
         )
-    _get_and_verify_session(appointment.session_id, current_user, db)
+    session = _get_and_verify_session(appointment.session_id, current_user, db)
 
     if current_user.role == ROLE_STUDENT and payload.status not in {"CONFIRMED", "CANCELLED"}:
         raise HTTPException(
@@ -282,7 +354,30 @@ def update_appointment_status(
             detail="Access forbidden: students can only confirm or cancel appointments",
         )
 
-    return advising_repo.update_appointment_status(db, appointment=appointment, new_status=payload.status)
+    updated = advising_repo.update_appointment_status(
+        db, appointment=appointment, new_status=payload.status
+    )
+
+    actor_label = "Giảng viên" if current_user.role == ROLE_LECTURER else "Sinh viên"
+    status_text_map = {
+        "CONFIRMED": f"✅ {actor_label} đã xác nhận lịch hẹn: {updated.subject} ({updated.time_slot})",
+        "COMPLETED": f"✔ {actor_label} đã đánh dấu hoàn thành lịch hẹn: {updated.subject}",
+        "CANCELLED": f"❌ {actor_label} đã hủy lịch hẹn: {updated.subject} ({updated.time_slot})",
+        "PENDING": f"⏳ {actor_label} đã chuyển lịch hẹn về chờ duyệt: {updated.subject}",
+    }
+    notice_text = status_text_map.get(
+        payload.status,
+        f"📅 {actor_label} đã cập nhật trạng thái lịch hẹn: {updated.subject}",
+    )
+    advising_repo.create_message(
+        db,
+        session=session,
+        obj_in=AdvisingMessageCreate(content=notice_text, message_type="APPOINTMENT_NOTICE"),
+        sender_id=current_user.user_code,
+        sender_role=current_user.role,
+        sender_name=current_user.name,
+    )
+    return updated
 
 
 # ==============================================================================
@@ -354,5 +449,21 @@ def toggle_task(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task '{task_id}' not found",
         )
-    _get_and_verify_session(task.session_id, current_user, db)
-    return advising_repo.toggle_task_completion(db, task=task, completed=payload.completed)
+    session = _get_and_verify_session(task.session_id, current_user, db)
+    updated = advising_repo.toggle_task_completion(db, task=task, completed=payload.completed)
+
+    actor_label = "Giảng viên" if current_user.role == ROLE_LECTURER else "Sinh viên"
+    notice_text = (
+        f"✅ {actor_label} đã hoàn thành nhiệm vụ: {updated.title}"
+        if payload.completed
+        else f"↩ {actor_label} đã mở lại nhiệm vụ: {updated.title}"
+    )
+    advising_repo.create_message(
+        db,
+        session=session,
+        obj_in=AdvisingMessageCreate(content=notice_text, message_type="TASK_NOTICE"),
+        sender_id=current_user.user_code,
+        sender_role=current_user.role,
+        sender_name=current_user.name,
+    )
+    return updated
