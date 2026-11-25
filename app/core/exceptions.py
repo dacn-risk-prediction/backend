@@ -5,6 +5,7 @@ Follows .agent/rules/fastapi-backend.md (Directory Structure: app/core/exception
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 
 
 class AppException(Exception):
@@ -67,4 +68,11 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             content={"detail": exc.detail},
             headers=exc.headers,
+        )
+
+    @app.exception_handler(IntegrityError)
+    async def integrity_error_handler(_request: Request, _exc: IntegrityError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"detail": "Database constraint violation: duplicate or referenced record conflict"},
         )

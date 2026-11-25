@@ -49,3 +49,16 @@ class AdminDetailResponse(AdminResponse):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class AdminSystemStatsResponse(BaseModel):
+    """Exact system-wide aggregate counts for the Admin Dashboard (never truncated by pagination)."""
+    users_count: int = Field(..., ge=0)
+    students_count: int = Field(..., ge=0)
+    lecturers_count: int = Field(..., ge=0)
+    admins_count: int = Field(..., ge=0)
+    courses_count: int = Field(..., ge=0)
+    active_classes_count: int = Field(..., ge=0)
+    semesters_count: int = Field(..., ge=0)
+    curriculums_count: int = Field(..., ge=0)
+    active_semester_code: str | None = None
+

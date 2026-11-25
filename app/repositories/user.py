@@ -17,8 +17,9 @@ class UserRepository:
         return db.scalar(statement)
 
     def get_by_email(self, db: Session, email: str) -> User | None:
-        """Fetch user by unique email address."""
-        statement = select(User).where(User.email == email)
+        """Fetch user by unique email address (case-insensitive)."""
+        normalized = email.strip().lower()
+        statement = select(User).where(func.lower(User.email) == normalized)
         return db.scalar(statement)
 
     def get_by_user_code(self, db: Session, user_code: str) -> User | None:
@@ -84,7 +85,7 @@ class UserRepository:
         db_obj = User(
             user_code=obj_in.user_code,
             name=obj_in.name,
-            email=obj_in.email,
+            email=obj_in.email.strip().lower(),
             password_hash=password_hash,
             role=obj_in.role,
             title=obj_in.title,

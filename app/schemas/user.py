@@ -1,5 +1,14 @@
 import uuid
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from typing import Literal
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+UserRoleLiteral = Literal["student", "lecturer", "admin"]
+
+
+def _validate_bcrypt_password_bytes(value: str | None) -> str | None:
+    if value is not None and len(value.encode("utf-8")) > 72:
+        raise ValueError("Password must not exceed 72 bytes")
+    return value
 
 
 class UserBase(BaseModel):
@@ -23,9 +32,8 @@ class UserBase(BaseModel):
         description="Unique institutional or personal email",
         examples=["user@university.edu.vn"],
     )
-    role: str = Field(
+    role: UserRoleLiteral = Field(
         ...,
-        max_length=50,
         description="System role: lecturer, student, or admin",
         examples=["student"],
     )
@@ -42,18 +50,30 @@ class UserCreate(UserBase):
     password: str = Field(
         ...,
         min_length=6,
-        max_length=128,
+        max_length=72,
         description="Plaintext password to be hashed before saving",
     )
+
+    @field_validator("password")
+    @classmethod
+    def check_password_bytes(cls, v: str) -> str:
+        result = _validate_bcrypt_password_bytes(v)
+        assert result is not None
+        return result
 
 
 class UserUpdate(BaseModel):
     """Schema for updating user profile. All fields are optional."""
     name: str | None = Field(default=None, min_length=1, max_length=255)
     email: EmailStr | None = Field(default=None)
-    role: str | None = Field(default=None, max_length=50)
+    role: UserRoleLiteral | None = Field(default=None)
     title: str | None = Field(default=None, max_length=100)
-    password: str | None = Field(default=None, min_length=6, max_length=128)
+    password: str | None = Field(default=None, min_length=6, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def check_password_bytes(cls, v: str | None) -> str | None:
+        return _validate_bcrypt_password_bytes(v)
 
 
 class UserResponse(UserBase):

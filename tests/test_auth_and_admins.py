@@ -126,3 +126,72 @@ def test_global_app_exception_handler(client: TestClient) -> None:
     res = client.get("/_test_domain_error")
     assert res.status_code == status.HTTP_404_NOT_FOUND
     assert res.json() == {"detail": "Sample domain entity missing"}
+
+
+def test_long_password_does_not_crash_and_case_insensitive_email(
+    client: TestClient,
+    seeded_entities: dict[str, object],
+) -> None:
+    # Login with >72-byte password must return 401 cleanly (not 500 ValueError)
+    res_long = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student1@hcmut.edu.vn", "password": "a" * 100},
+    )
+    assert res_long.status_code == status.HTTP_401_UNAUTHORIZED
+
+    # Login with mixed-case email succeeds
+    res_case = client.post(
+        "/api/v1/auth/login",
+        json={"email": "STUDENT1@HCMUT.EDU.VN", "password": "Password123!"},
+    )
+    assert res_case.status_code == status.HTTP_200_OK
+
+    # Creating user with >72-byte password returns 422 cleanly
+    res_create_long = client.post(
+        "/api/v1/users/",
+        json={
+            "user_code": "2699001",
+            "name": "Long Pass User",
+            "email": "longpass@hcmut.edu.vn",
+            "role": "student",
+            "password": "x" * 80,
+        },
+    )
+    assert res_create_long.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+
+def test_admin_system_stats_and_atomic_active_semester(
+    client: TestClient,
+    seeded_entities: dict[str, object],
+) -> None:
+    # Stats endpoint returns exact SQL counts
+    stats_res = client.get("/api/v1/admins/stats")
+    assert stats_res.status_code == status.HTTP_200_OK
+    stats = stats_res.json()
+    assert stats["students_count"] >= 2
+    assert stats["lecturers_count"] >= 1
+    assert stats["courses_count"] >= 1
+    assert stats["active_semester_code"] == "HK261"
+
+    # Creating a new active semester atomically deactivates HK261
+    create_sem = client.post(
+        "/api/v1/semesters/",
+        json={
+            "semester_code": "HK262",
+            "academic_year": "2026-2027",
+            "term": 2,
+            "is_active": True,
+        },
+    )
+    assert create_sem.status_code == status.HTTP_201_CREATED
+
+    all_sems = client.get("/api/v1/semesters/").json()
+    active_sems = [s for s in all_sems if s["is_active"]]
+    assert [s["semester_code"] for s in active_sems] == ["HK262"]
+
+    # Switching back via PUT atomically deactivates HK262
+    switch_back = client.put("/api/v1/semesters/HK261", json={"is_active": True})
+    assert switch_back.status_code == status.HTTP_200_OK
+    all_sems_after = client.get("/api/v1/semesters/").json()
+    active_after = [s for s in all_sems_after if s["is_active"]]
+    assert [s["semester_code"] for s in active_after] == ["HK261"]

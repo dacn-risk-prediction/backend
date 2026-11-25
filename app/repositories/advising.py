@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import and_, case, desc, func, or_, select
+from sqlalchemy import and_, case, desc, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import ROLE_ADMIN, ROLE_LECTURER, ROLE_STUDENT
@@ -102,7 +103,20 @@ class AdvisingRepository:
             status="ACTIVE",
         )
         db.add(new_session)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            concurrent = self.get_session_by_unique(
+                db,
+                student_id=student_id,
+                lecturer_id=lecturer_id,
+                course_code=obj_in.course_code,
+                semester_code=obj_in.semester_code,
+            )
+            if concurrent:
+                return concurrent, False
+            raise
         db.refresh(new_session)
         return self.get_session_by_id(db, new_session.id) or new_session, True
 
@@ -303,23 +317,27 @@ class AdvisingRepository:
         session_id: uuid.UUID,
         reader_id: str,
     ) -> int:
-        """Mark incoming messages as read when recipient opens the session."""
+        """Mark incoming messages as read only when reader is a direct participant of the session."""
+        session = db.scalar(
+            select(AdvisingSession).where(AdvisingSession.id == session_id)
+        )
+        if not session or reader_id not in {session.student_id, session.lecturer_id}:
+            return 0
+
         now = datetime.now(timezone.utc)
-        statement = (
-            select(AdvisingMessage)
+        result = db.execute(
+            update(AdvisingMessage)
             .where(
                 AdvisingMessage.session_id == session_id,
                 AdvisingMessage.is_read.is_(False),
                 AdvisingMessage.sender_id != reader_id,
             )
+            .values(is_read=True, read_at=now)
         )
-        unread_messages = list(db.scalars(statement).all())
-        for msg in unread_messages:
-            msg.is_read = True
-            msg.read_at = now
-        if unread_messages:
+        marked = int(result.rowcount or 0)
+        if marked > 0:
             db.commit()
-        return len(unread_messages)
+        return marked
 
     def count_total_unread_for_user(
         self,
@@ -329,6 +347,9 @@ class AdvisingRepository:
         role: str,
     ) -> int:
         """Count unread messages across all active sessions for a user."""
+        if role not in {ROLE_STUDENT, ROLE_LECTURER}:
+            return 0
+
         statement = select(func.count(AdvisingMessage.id)).join(
             AdvisingSession, AdvisingMessage.session_id == AdvisingSession.id
         ).where(
@@ -350,28 +371,30 @@ class AdvisingRepository:
         user_code: str,
         role: str,
     ) -> int:
-        """Mark all incoming unread messages across all sessions for a user as read."""
+        """Mark all incoming unread messages across all sessions for a student/lecturer as read."""
+        if role not in {ROLE_STUDENT, ROLE_LECTURER}:
+            return 0
+
         now = datetime.now(timezone.utc)
-        statement = (
-            select(AdvisingMessage)
-            .join(AdvisingSession, AdvisingMessage.session_id == AdvisingSession.id)
+        session_subq = select(AdvisingSession.id)
+        if role == ROLE_STUDENT:
+            session_subq = session_subq.where(AdvisingSession.student_id == user_code)
+        else:
+            session_subq = session_subq.where(AdvisingSession.lecturer_id == user_code)
+
+        result = db.execute(
+            update(AdvisingMessage)
             .where(
+                AdvisingMessage.session_id.in_(session_subq),
                 AdvisingMessage.is_read.is_(False),
                 AdvisingMessage.sender_id != user_code,
             )
+            .values(is_read=True, read_at=now)
         )
-        if role == ROLE_STUDENT:
-            statement = statement.where(AdvisingSession.student_id == user_code)
-        elif role == ROLE_LECTURER:
-            statement = statement.where(AdvisingSession.lecturer_id == user_code)
-
-        unread_messages = list(db.scalars(statement).all())
-        for msg in unread_messages:
-            msg.is_read = True
-            msg.read_at = now
-        if unread_messages:
+        marked = int(result.rowcount or 0)
+        if marked > 0:
             db.commit()
-        return len(unread_messages)
+        return marked
 
     def list_notifications_for_user(
         self,
@@ -519,6 +542,8 @@ class AdvisingRepository:
         *,
         session: AdvisingSession,
         obj_in: AdvisingAppointmentCreate,
+        created_by_id: str,
+        created_by_role: str,
     ) -> AdvisingAppointment:
         """Schedule a new advising appointment."""
         appointment = AdvisingAppointment(
@@ -531,6 +556,8 @@ class AdvisingRepository:
             meeting_type=obj_in.meeting_type,
             location=obj_in.location,
             notes=obj_in.notes,
+            created_by_id=created_by_id,
+            created_by_role=created_by_role,
             status="PENDING",
         )
         db.add(appointment)

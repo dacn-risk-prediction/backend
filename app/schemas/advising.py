@@ -114,6 +114,8 @@ class AdvisingAppointmentResponse(AdvisingAppointmentBase):
     student_id: str
     lecturer_id: str
     course_code: str
+    created_by_id: Optional[str] = None
+    created_by_role: Optional[str] = None
     status: str
     created_at: datetime
     updated_at: datetime

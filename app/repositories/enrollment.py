@@ -197,15 +197,16 @@ class EnrollmentRepository:
         up_to_semester: str | None = None,
         only_passed: bool = True,
     ) -> float:
-        """Calculate weighted Cumulative GPA (4.0 scale) for a student.
+        """Calculate weighted Cumulative GPA (4.0 scale) deduplicated per course_code.
 
-        Formula: sum(course_gpa * credits) / sum(credits)
-        By default, only_passed=True aligns with academic degree credit calculation,
-        where only successfully completed courses count toward cumulative GPA.
+        Formula: sum(best_course_gpa * credits) / sum(credits)
+        Retaken/improved courses keep the highest recorded GPA so credits are never double-counted.
         """
         statement = (
             select(
+                Enrollment.course_code,
                 Enrollment.gpa_4,
+                Enrollment.status,
                 Course.credits,
             )
             .join(Course, Enrollment.course_code == Course.course_code)
@@ -226,8 +227,19 @@ class EnrollmentRepository:
         if not records:
             return 0.0
 
-        total_points = sum(gpa * creds for gpa, creds in records)
-        total_credits = sum(creds for _, creds in records)
+        best_by_course: dict[str, tuple[float, int]] = {}
+        for course_code, gpa_4, enr_status, creds in records:
+            if enr_status and enr_status.lower() in {"dropped", "withdrawn"}:
+                continue
+            prev = best_by_course.get(course_code)
+            if prev is None or gpa_4 > prev[0]:
+                best_by_course[course_code] = (gpa_4, creds)
+
+        if not best_by_course:
+            return 0.0
+
+        total_points = sum(gpa * creds for gpa, creds in best_by_course.values())
+        total_credits = sum(creds for _, creds in best_by_course.values())
 
         if total_credits == 0:
             return 0.0
@@ -278,16 +290,17 @@ class EnrollmentRepository:
         *,
         student_id: str,
     ) -> dict[str, Any]:
-        """Generate a complete academic performance summary for a student.
+        """Generate a complete academic performance summary deduplicated per course_code.
 
         Includes Cumulative GPA, total attempted credits, total passed credits,
-        and course completion counts.
+        and course completion counts without double-counting retaken/improved courses.
         """
         statement = (
             select(
                 Enrollment.course_code,
                 Enrollment.gpa_4,
                 Enrollment.passed,
+                Enrollment.status,
                 Course.credits,
             )
             .join(Course, Enrollment.course_code == Course.course_code)
@@ -300,25 +313,38 @@ class EnrollmentRepository:
         records = db.execute(statement).all()
 
         total_attempted_credits = 0
-        total_passed_credits = 0
-        total_graded_passed_credits = 0
-        weighted_passed_points = 0.0
-        passed_count = 0
         failed_count = 0
         is_graduated = False
+        # Deduplicate passed courses by course_code: keep best gpa_4 (or None if exempted/pass-only)
+        passed_by_course: dict[str, tuple[float | None, int]] = {}
 
-        for course_code, gpa_4, passed, credits in records:
+        for course_code, gpa_4, passed, enr_status, credits in records:
+            if enr_status and enr_status.lower() in {"dropped", "withdrawn"}:
+                continue
             total_attempted_credits += credits
             if passed:
-                total_passed_credits += credits
-                passed_count += 1
                 if course_code == "CO4337":
                     is_graduated = True
-                if gpa_4 is not None:
-                    weighted_passed_points += gpa_4 * credits
-                    total_graded_passed_credits += credits
+                prev = passed_by_course.get(course_code)
+                if prev is None:
+                    passed_by_course[course_code] = (gpa_4, credits)
+                else:
+                    prev_gpa, prev_credits = prev
+                    if gpa_4 is not None and (prev_gpa is None or gpa_4 > prev_gpa):
+                        passed_by_course[course_code] = (gpa_4, credits)
+                    elif prev_credits < credits:
+                        passed_by_course[course_code] = (prev_gpa, credits)
             elif passed is False:
                 failed_count += 1
+
+        total_passed_credits = sum(creds for _, creds in passed_by_course.values())
+        passed_count = len(passed_by_course)
+        weighted_passed_points = sum(
+            gpa * creds for gpa, creds in passed_by_course.values() if gpa is not None
+        )
+        total_graded_passed_credits = sum(
+            creds for gpa, creds in passed_by_course.values() if gpa is not None
+        )
 
         cumulative_gpa = (
             round(weighted_passed_points / total_graded_passed_credits, 2)
@@ -349,10 +375,14 @@ class EnrollmentRepository:
                 Enrollment.course_code,
                 Enrollment.gpa_4,
                 Enrollment.passed,
+                Enrollment.status,
                 Course.credits,
             )
             .join(Course, Enrollment.course_code == Course.course_code)
-            .where(Enrollment.student_id == student_id)
+            .where(
+                Enrollment.student_id == student_id,
+                Enrollment.semester_code.isnot(None),
+            )
             .order_by(Enrollment.semester_code)
         )
 
@@ -360,10 +390,14 @@ class EnrollmentRepository:
         if not records:
             return []
 
-        # Group enrollments by semester
+        # Group enrollments by semester (skip dropped/withdrawn)
         semesters_data: dict[str, list[Any]] = {}
         for record in records:
+            if record.status and record.status.lower() in {"dropped", "withdrawn"}:
+                continue
             sem_code = record.semester_code
+            if not sem_code:
+                continue
             if sem_code not in semesters_data:
                 semesters_data[sem_code] = []
             semesters_data[sem_code].append(record)

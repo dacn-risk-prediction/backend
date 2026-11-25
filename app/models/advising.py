@@ -209,6 +209,8 @@ class AdvisingAppointment(Base):
     )
     location: Mapped[str] = mapped_column(String(255), nullable=False)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    created_by_role: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,

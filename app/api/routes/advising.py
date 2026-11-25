@@ -110,7 +110,19 @@ def create_or_get_session(
                 )
     else:  # Admin
         student_id = payload.student_id
-        lecturer_id = payload.lecturer_id or "GV00001"
+        lecturer_id = payload.lecturer_id
+        if not lecturer_id:
+            enrollments = enrollment_repo.get_student_semester_courses(
+                db, student_id=student_id, semester_code=payload.semester_code
+            )
+            matched = next((e for e in enrollments if e["course_code"] == payload.course_code), None)
+            if matched and matched.get("lecturer_id"):
+                lecturer_id = matched["lecturer_id"]
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="lecturer_id is required when no matching enrollment lecturer can be resolved.",
+                )
 
     # Verify student exists
     if not student_repo.get_by_student_id(db, student_id):
@@ -312,10 +324,31 @@ def create_appointment(
 ):
     """Schedule an office or online consultation appointment."""
     session = _get_and_verify_session(session_id, current_user, db)
-    appointment = advising_repo.create_appointment(db, session=session, obj_in=payload)
+    appointment = advising_repo.create_appointment(
+        db,
+        session=session,
+        obj_in=payload,
+        created_by_id=current_user.user_code,
+        created_by_role=current_user.role,
+    )
 
-    # Automatically notify session with an APPOINTMENT_NOTICE message
-    notice_text = f"📅 Lịch hẹn mới đã được tạo: {payload.subject} ({payload.time_slot} tại {payload.location})"
+    # Automatically notify recipient with an APPOINTMENT_NOTICE message
+    if current_user.role == ROLE_LECTURER:
+        notice_text = (
+            f"📅 Giảng viên đã gửi lời mời lịch hẹn: {payload.subject} "
+            f"({payload.time_slot} tại {payload.location})"
+        )
+    elif current_user.role == ROLE_STUDENT:
+        notice_text = (
+            f"📅 Sinh viên đã gửi yêu cầu đặt lịch hẹn: {payload.subject} "
+            f"({payload.time_slot} tại {payload.location})"
+        )
+    else:
+        notice_text = (
+            f"📅 Lịch hẹn mới đã được tạo: {payload.subject} "
+            f"({payload.time_slot} tại {payload.location})"
+        )
+
     advising_repo.create_message(
         db,
         session=session,
@@ -339,7 +372,7 @@ def update_appointment_status(
     current_user: CurrentUser,
     db: SessionDep,
 ):
-    """Change meeting status (confirm, cancel, or complete)."""
+    """Change meeting status with strict one-time recipient confirmation and state validation."""
     appointment = advising_repo.get_appointment_by_id(db, appointment_id)
     if not appointment:
         raise HTTPException(
@@ -354,16 +387,55 @@ def update_appointment_status(
             detail="Access forbidden: students can only confirm or cancel appointments",
         )
 
+    if payload.status == "PENDING":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot revert an appointment back to PENDING",
+        )
+
+    if appointment.status in {"CANCELLED", "COMPLETED"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Appointment is already {appointment.status} and cannot be modified",
+        )
+
+    if payload.status == "CONFIRMED":
+        if appointment.status != "PENDING":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Appointment has already been confirmed",
+            )
+        if (
+            appointment.created_by_id is not None
+            and appointment.created_by_id == current_user.user_code
+            and current_user.role != ROLE_ADMIN
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access forbidden: only the recipient can confirm this appointment",
+            )
+
+    if payload.status == "COMPLETED" and appointment.status != "CONFIRMED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only confirmed appointments can be marked as completed",
+        )
+
     updated = advising_repo.update_appointment_status(
         db, appointment=appointment, new_status=payload.status
     )
 
-    actor_label = "Giảng viên" if current_user.role == ROLE_LECTURER else "Sinh viên"
+    actor_label = (
+        "Giảng viên"
+        if current_user.role == ROLE_LECTURER
+        else "Quản trị viên"
+        if current_user.role == ROLE_ADMIN
+        else "Sinh viên"
+    )
     status_text_map = {
         "CONFIRMED": f"✅ {actor_label} đã xác nhận lịch hẹn: {updated.subject} ({updated.time_slot})",
         "COMPLETED": f"✔ {actor_label} đã đánh dấu hoàn thành lịch hẹn: {updated.subject}",
         "CANCELLED": f"❌ {actor_label} đã hủy lịch hẹn: {updated.subject} ({updated.time_slot})",
-        "PENDING": f"⏳ {actor_label} đã chuyển lịch hẹn về chờ duyệt: {updated.subject}",
     }
     notice_text = status_text_map.get(
         payload.status,
@@ -452,7 +524,13 @@ def toggle_task(
     session = _get_and_verify_session(task.session_id, current_user, db)
     updated = advising_repo.toggle_task_completion(db, task=task, completed=payload.completed)
 
-    actor_label = "Giảng viên" if current_user.role == ROLE_LECTURER else "Sinh viên"
+    actor_label = (
+        "Giảng viên"
+        if current_user.role == ROLE_LECTURER
+        else "Quản trị viên"
+        if current_user.role == ROLE_ADMIN
+        else "Sinh viên"
+    )
     notice_text = (
         f"✅ {actor_label} đã hoàn thành nhiệm vụ: {updated.title}"
         if payload.completed
