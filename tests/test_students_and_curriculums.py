@@ -165,3 +165,58 @@ def test_curriculum_detail_and_knowledge_block_category_filter(
     kb_res = client.get("/api/v1/curriculums/knowledge-blocks", params={"category": "Core"})
     assert kb_res.status_code == status.HTTP_200_OK
     assert [b["block_id"] for b in kb_res.json()] == ["KB_CS_CORE"]
+
+
+def test_student_summary_deduplicates_retaken_improved_courses_and_handles_null_semester(
+    client: TestClient,
+    db_session: Session,
+    seeded_entities: dict[str, object],
+) -> None:
+    student = seeded_entities["student"]
+    sem_past = Semester(semester_code="HK251", academic_year="2025-2026", term=1, is_active=False)
+    sem_past2 = Semester(semester_code="HK252", academic_year="2025-2026", term=2, is_active=False)
+    db_session.add_all([sem_past, sem_past2])
+    db_session.flush()
+
+    # Attempt 1: Passed CO2017 (3 credits) with C (2.0)
+    e1 = Enrollment(
+        student_id=student.student_id,
+        course_code="CO2017",
+        semester_code="HK251",
+        final_score=6.0,
+        gpa_4=2.0,
+        passed=True,
+        status="Pass",
+    )
+    # Attempt 2: Improved CO2017 (3 credits) to A (4.0)
+    e2 = Enrollment(
+        student_id=student.student_id,
+        course_code="CO2017",
+        semester_code="HK252",
+        retaken=True,
+        final_score=9.0,
+        gpa_4=4.0,
+        passed=True,
+        status="Pass",
+    )
+    # Record with null semester_code must not crash semester GPA history sorting
+    e3 = Enrollment(
+        student_id=student.student_id,
+        course_code="CO2017",
+        semester_code=None,
+        final_score=None,
+        gpa_4=None,
+        passed=None,
+        status="dropped",
+    )
+    db_session.add_all([e1, e2, e3])
+    db_session.commit()
+
+    res = client.get(f"/api/v1/students/{student.student_id}/summary")
+    assert res.status_code == status.HTTP_200_OK
+    data = res.json()
+    # Credits and passed count must NOT be double-counted (3 credits, 1 passed course, best GPA 4.0)
+    assert data["total_passed_credits"] == 3
+    assert data["passed_courses_count"] == 1
+    assert data["cumulative_gpa"] == 4.0
+    assert len(data["semester_gpas"]) == 2

@@ -16,6 +16,9 @@ CACHE_MIGRATION_PATH = BACKEND_ROOT / "alembic" / "versions" / "0ba7ef565c09_add
 SEMESTER_DEADLINE_MIGRATION_PATH = (
     BACKEND_ROOT / "alembic" / "versions" / "8cb8aae46e53_add_withdraw_deadline_to_semesters.py"
 )
+APPOINTMENT_CREATOR_MIGRATION_PATH = (
+    BACKEND_ROOT / "alembic" / "versions" / "d4e7f1a29b3c_add_created_by_to_advising_appointments.py"
+)
 
 
 def _load_migration(path: Path, name: str):
@@ -30,7 +33,51 @@ def test_alembic_has_single_head_at_latest_revision() -> None:
     cfg = Config(str(BACKEND_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["8cb8aae46e53"]
+    assert script.get_heads() == ["d4e7f1a29b3c"]
+
+
+def test_appointment_creator_migration_upgrade_and_downgrade() -> None:
+    """Verify created_by_id and created_by_role are added and removed idempotently."""
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                """
+                CREATE TABLE advising_appointments (
+                    id VARCHAR(36) PRIMARY KEY,
+                    session_id VARCHAR(36) NOT NULL,
+                    student_id VARCHAR(50) NOT NULL,
+                    lecturer_id VARCHAR(50) NOT NULL,
+                    course_code VARCHAR(20) NOT NULL,
+                    subject VARCHAR(255) NOT NULL,
+                    time_slot VARCHAR(100) NOT NULL,
+                    meeting_type VARCHAR(20) NOT NULL DEFAULT 'OFFICE',
+                    location VARCHAR(255) NOT NULL,
+                    notes TEXT,
+                    status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+                )
+                """
+            )
+        )
+        migration = _load_migration(APPOINTMENT_CREATOR_MIGRATION_PATH, "appointment_creator_migration")
+        ctx = MigrationContext.configure(conn)
+        with Operations.context(ctx) as ops:
+            migration.op = ops
+            migration.upgrade()
+            # Calling upgrade again must be idempotent
+            migration.upgrade()
+
+        cols = {c["name"] for c in sa.inspect(conn).get_columns("advising_appointments")}
+        assert {"created_by_id", "created_by_role"}.issubset(cols)
+
+        with Operations.context(ctx) as ops:
+            migration.op = ops
+            migration.downgrade()
+
+        cols_after = {c["name"] for c in sa.inspect(conn).get_columns("advising_appointments")}
+        assert "created_by_id" not in cols_after
+        assert "created_by_role" not in cols_after
+    engine.dispose()
 
 
 def test_semester_withdraw_deadline_migration_upgrade_and_downgrade() -> None:

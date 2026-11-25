@@ -301,3 +301,198 @@ def test_advising_notifications_feed_history_and_read_all(
     assert read_all.status_code == status.HTTP_200_OK
     assert read_all.json()["marked_count"] == 3
     assert read_all.json()["unread_count"] == 0
+
+
+def test_appointment_two_way_one_time_confirmation_workflow(
+    client: TestClient,
+    seeded_entities: dict[str, object],
+) -> None:
+    """Both directions: creator notifies recipient, only recipient confirms once, creator gets notified."""
+    lecturer_user = seeded_entities["lecturer_user"]
+    student_user = seeded_entities["student_user"]
+
+    sess_res = client.post(
+        "/api/v1/advising/sessions",
+        headers=auth_headers(lecturer_user),
+        json={
+            "student_id": student_user.user_code,
+            "course_code": "CO2017",
+            "semester_code": "HK261",
+            "topic": "Dat lich hen 2 chieu",
+            "risk_level": "WARNING",
+        },
+    )
+    assert sess_res.status_code == status.HTTP_201_CREATED
+    session_id = sess_res.json()["id"]
+
+    # --- Direction 1: Lecturer creates appointment -> Student confirms once ---
+    lec_appt = client.post(
+        f"/api/v1/advising/sessions/{session_id}/appointments",
+        headers=auth_headers(lecturer_user),
+        json={
+            "subject": "Moi gap trao doi giua ky",
+            "time_slot": "Thu 3 14:00 - 15:00",
+            "meeting_type": "OFFICE",
+            "location": "P.503 H6",
+        },
+    )
+    assert lec_appt.status_code == status.HTTP_201_CREATED
+    lec_appt_data = lec_appt.json()
+    assert lec_appt_data["created_by_id"] == lecturer_user.user_code
+    assert lec_appt_data["created_by_role"] == "lecturer"
+    assert lec_appt_data["status"] == "PENDING"
+    lec_appt_id = lec_appt_data["id"]
+
+    # Student receives 1 unread notification
+    stu_unread = client.get("/api/v1/advising/unread-count", headers=auth_headers(student_user))
+    assert stu_unread.json()["unread_count"] == 1
+
+    # Lecturer CANNOT self-confirm own appointment (403)
+    self_confirm_lec = client.patch(
+        f"/api/v1/advising/appointments/{lec_appt_id}/status",
+        headers=auth_headers(lecturer_user),
+        json={"status": "CONFIRMED"},
+    )
+    assert self_confirm_lec.status_code == status.HTTP_403_FORBIDDEN
+
+    # Lecturer CANNOT mark PENDING appointment as COMPLETED before confirmation (409)
+    early_complete = client.patch(
+        f"/api/v1/advising/appointments/{lec_appt_id}/status",
+        headers=auth_headers(lecturer_user),
+        json={"status": "COMPLETED"},
+    )
+    assert early_complete.status_code == status.HTTP_409_CONFLICT
+
+    # Student confirms ONCE (200) -> Lecturer receives 1 unread notification
+    stu_confirm = client.patch(
+        f"/api/v1/advising/appointments/{lec_appt_id}/status",
+        headers=auth_headers(student_user),
+        json={"status": "CONFIRMED"},
+    )
+    assert stu_confirm.status_code == status.HTTP_200_OK
+    assert stu_confirm.json()["status"] == "CONFIRMED"
+
+    lec_unread = client.get("/api/v1/advising/unread-count", headers=auth_headers(lecturer_user))
+    assert lec_unread.json()["unread_count"] == 1
+
+    # Confirming a second time is rejected (409) and does NOT emit duplicate notifications
+    dup_confirm = client.patch(
+        f"/api/v1/advising/appointments/{lec_appt_id}/status",
+        headers=auth_headers(student_user),
+        json={"status": "CONFIRMED"},
+    )
+    assert dup_confirm.status_code == status.HTTP_409_CONFLICT
+    lec_unread_after_dup = client.get("/api/v1/advising/unread-count", headers=auth_headers(lecturer_user))
+    assert lec_unread_after_dup.json()["unread_count"] == 1
+
+    # Reverting back to PENDING is rejected (400)
+    revert_pending = client.patch(
+        f"/api/v1/advising/appointments/{lec_appt_id}/status",
+        headers=auth_headers(lecturer_user),
+        json={"status": "PENDING"},
+    )
+    assert revert_pending.status_code == status.HTTP_400_BAD_REQUEST
+
+    # --- Direction 2: Student creates appointment -> Lecturer confirms once ---
+    stu_appt = client.post(
+        f"/api/v1/advising/sessions/{session_id}/appointments",
+        headers=auth_headers(student_user),
+        json={
+            "subject": "Hoi bai tap lon",
+            "time_slot": "Thu 6 14:00 - 15:00",
+            "meeting_type": "ONLINE",
+            "location": "Google Meet",
+        },
+    )
+    assert stu_appt.status_code == status.HTTP_201_CREATED
+    stu_appt_data = stu_appt.json()
+    assert stu_appt_data["created_by_id"] == student_user.user_code
+    assert stu_appt_data["created_by_role"] == "student"
+    stu_appt_id = stu_appt_data["id"]
+
+    # Student CANNOT self-confirm own appointment (403)
+    self_confirm_stu = client.patch(
+        f"/api/v1/advising/appointments/{stu_appt_id}/status",
+        headers=auth_headers(student_user),
+        json={"status": "CONFIRMED"},
+    )
+    assert self_confirm_stu.status_code == status.HTTP_403_FORBIDDEN
+
+    # Lecturer confirms ONCE (200) -> Student gets notified (unread increases by 1)
+    lec_confirm = client.patch(
+        f"/api/v1/advising/appointments/{stu_appt_id}/status",
+        headers=auth_headers(lecturer_user),
+        json={"status": "CONFIRMED"},
+    )
+    assert lec_confirm.status_code == status.HTTP_200_OK
+    assert lec_confirm.json()["status"] == "CONFIRMED"
+
+    stu_unread_after = client.get("/api/v1/advising/unread-count", headers=auth_headers(student_user))
+    assert stu_unread_after.json()["unread_count"] == 2
+
+    # Lecturer confirming again is rejected (409)
+    lec_dup = client.patch(
+        f"/api/v1/advising/appointments/{stu_appt_id}/status",
+        headers=auth_headers(lecturer_user),
+        json={"status": "CONFIRMED"},
+    )
+    assert lec_dup.status_code == status.HTTP_409_CONFLICT
+
+    # Cancelling a confirmed appointment works once, then modifying is rejected (409)
+    cancel_res = client.patch(
+        f"/api/v1/advising/appointments/{stu_appt_id}/status",
+        headers=auth_headers(student_user),
+        json={"status": "CANCELLED"},
+    )
+    assert cancel_res.status_code == status.HTTP_200_OK
+    assert cancel_res.json()["status"] == "CANCELLED"
+
+    after_cancel = client.patch(
+        f"/api/v1/advising/appointments/{stu_appt_id}/status",
+        headers=auth_headers(lecturer_user),
+        json={"status": "CONFIRMED"},
+    )
+    assert after_cancel.status_code == status.HTTP_409_CONFLICT
+
+
+def test_admin_read_all_does_not_wipe_student_or_lecturer_unread(
+    client: TestClient,
+    seeded_entities: dict[str, object],
+) -> None:
+    admin_user = seeded_entities["admin_user"]
+    lecturer_user = seeded_entities["lecturer_user"]
+    student_user = seeded_entities["student_user"]
+
+    sess_res = client.post(
+        "/api/v1/advising/sessions",
+        headers=auth_headers(lecturer_user),
+        json={
+            "student_id": student_user.user_code,
+            "course_code": "CO2017",
+            "semester_code": "HK261",
+            "topic": "Test admin read safety",
+            "risk_level": "WARNING",
+        },
+    )
+    session_id = sess_res.json()["id"]
+
+    client.post(
+        f"/api/v1/advising/sessions/{session_id}/messages",
+        headers=auth_headers(lecturer_user),
+        json={"content": "Tin nhan quan trong cho sinh vien", "message_type": "NOTICE"},
+    )
+
+    # Admin calling read-all or session read must NOT clear student's unread_count
+    admin_read_all = client.post("/api/v1/advising/read-all", headers=auth_headers(admin_user))
+    assert admin_read_all.status_code == status.HTTP_200_OK
+    assert admin_read_all.json()["marked_count"] == 0
+
+    admin_read_sess = client.post(
+        f"/api/v1/advising/sessions/{session_id}/read",
+        headers=auth_headers(admin_user),
+    )
+    assert admin_read_sess.status_code == status.HTTP_200_OK
+    assert admin_read_sess.json()["marked_count"] == 0
+
+    stu_unread = client.get("/api/v1/advising/unread-count", headers=auth_headers(student_user))
+    assert stu_unread.json()["unread_count"] == 1
