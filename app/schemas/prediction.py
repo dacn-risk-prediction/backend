@@ -1,5 +1,9 @@
-from typing import Any
+from datetime import datetime
+from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
+
+TargetGoal = Literal["PASS", "GRADE_C", "GRADE_B", "GRADE_A"]
+AdviceSource = Literal["cache", "gemini", "fallback"]
 
 
 class ShapFactorResponse(BaseModel):
@@ -251,6 +255,153 @@ class ClassPredictionResponse(BaseModel):
         default_factory=list,
         description="Individual student predictions, ordered descending by risk (highest risk first)",
     )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PredictCourseCounterfactualRequest(BaseModel):
+    """Request payload for constrained counterfactual recourse & 13-scenario pedagogical advice."""
+    student_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="Student ID code (MSSV)",
+        examples=["2642009"],
+    )
+    course_code: str = Field(
+        ...,
+        min_length=1,
+        max_length=20,
+        description="Course code identifier",
+        examples=["CO1023"],
+    )
+    semester_code: str | None = Field(
+        default=None,
+        description="Optional semester code. If omitted, defaults to latest attempt",
+        examples=["HK261"],
+    )
+    target_goal: TargetGoal = Field(
+        default="PASS",
+        description="Target academic outcome: 'PASS', 'GRADE_C', 'GRADE_B', or 'GRADE_A'",
+        examples=["GRADE_B"],
+    )
+    locked_components: list[str] | None = Field(
+        default=None,
+        description="Explicit component names locked from counterfactual modification",
+    )
+    allow_improve_recorded_process: bool = Field(
+        default=True,
+        description="Allow cumulative coursework (quiz/lab/btl) to improve monotonically above current marks",
+    )
+    what_if_marks: dict[str, float | None] | None = Field(
+        default=None,
+        description="Optional override marks for interactive What-If evaluation before computing recourse",
+    )
+
+
+class CounterfactualPlanResponse(BaseModel):
+    """A minimal-effort counterfactual recourse plan achieving the requested goal."""
+    plan_id: str = Field(..., examples=["cf_1"])
+    title: str = Field(..., examples=["Cải thiện Thực hành / Lab"])
+    changes: dict[str, float | None] = Field(
+        default_factory=dict,
+        description="Required target scores per editable component and minimum final exam score",
+    )
+    projected_fail_probability: float = Field(..., ge=0.0, le=1.0, examples=[0.0186])
+    projected_score10: float = Field(..., ge=0.0, le=10.0, examples=[7.13])
+    projected_letter_grade: str = Field(..., examples=["B"])
+    effort_score: float = Field(..., ge=0.0, examples=[4.0])
+    is_feasible: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FinalExamTargetSummaryResponse(BaseModel):
+    """Minimum final exam scores required to reach PASS, C, B, and A thresholds."""
+    pass_score: float | None = Field(default=None, examples=[3.7])
+    grade_c_score: float | None = Field(default=None, examples=[6.2])
+    grade_b_score: float | None = Field(default=None, examples=[8.7])
+    grade_a_score: float | None = Field(default=None, examples=[None])
+    is_pass_feasible: bool
+    used_exact_marks: bool
+    final_exam_weight: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PedagogicalRecommendationResponse(BaseModel):
+    """Structured pedagogical scenario advice generated from Dual-XAI signals."""
+    scenario_code: str = Field(..., examples=["EARLY_WEAK_START_RECOVERABLE"])
+    category: str = Field(..., examples=["RECOVERY"])
+    priority: str = Field(..., examples=["MEDIUM"])
+    title: str
+    message: str
+    targets: dict[str, Any] = Field(default_factory=dict)
+    linked_shap_features: list[str] = Field(default_factory=list)
+    can_withdraw_hint: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CourseCounterfactualBaselineResponse(BaseModel):
+    """Baseline prediction state before applying counterfactual recourse."""
+    fail_probability: float = Field(..., ge=0.0, le=1.0, examples=[0.9381])
+    is_calibrated: bool
+    predicted_course_fail: int
+    is_at_risk: bool
+    risk_level: str = Field(..., examples=["MEDIUM"])
+    predicted_score10: float = Field(..., ge=0.0, le=10.0, examples=[5.57])
+    predicted_gpa4: float = Field(..., ge=0.0, le=4.0, examples=[1.5])
+    predicted_letter_grade: str = Field(..., examples=["C"])
+    current_marks: dict[str, float | None] = Field(default_factory=dict)
+    weights: dict[str, float] = Field(default_factory=dict)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CourseCounterfactualResponse(BaseModel):
+    """Full counterfactual recourse and pedagogical advice payload enriched with DB metadata."""
+    student_id: str
+    course_code: str
+    course_name: str | None = None
+    credits: int | None = None
+    class_id: str | None = None
+    class_group: str | None = None
+    lecturer_name: str | None = None
+    semester_code: str
+    target_goal: str
+    already_at_target: bool
+    is_feasible: bool
+    editable_components: list[str] = Field(default_factory=list)
+    inference_time_ms: float
+    baseline: CourseCounterfactualBaselineResponse
+    plans: list[CounterfactualPlanResponse] = Field(default_factory=list)
+    final_exam_targets: FinalExamTargetSummaryResponse
+    recommendations: list[PedagogicalRecommendationResponse] = Field(default_factory=list)
+    top_shap_factors: list[ShapFactorResponse] = Field(default_factory=list)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CourseAdviseAIRequest(PredictCourseCounterfactualRequest):
+    """Request payload for on-demand grounded Gemini AI academic advice."""
+    force_refresh: bool = Field(
+        default=False,
+        description="Bypass existing cache and request a fresh grounded explanation from Gemini",
+    )
+
+
+class CourseAdviseAIResponse(BaseModel):
+    """Grounded natural-language academic advice response with cache/fallback provenance."""
+    course_code: str
+    course_name: str | None = None
+    semester_code: str
+    target_goal: str
+    scenario_code: str | None = None
+    advice_markdown: str
+    source: AdviceSource
+    model_name: str | None = None
+    cached_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

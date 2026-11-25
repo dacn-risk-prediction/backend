@@ -1252,6 +1252,50 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 
 ---
 
+#### 5. Course Counterfactual Recourse & 13-Scenario Advice
+
+- **Endpoint**: `POST /api/v1/predictions/course/counterfactual`
+- **Auth Required**: Yes (`ROLE_STUDENT` own MSSV; `ROLE_LECTURER` / `ROLE_ADMIN`)
+- **Request Body**: `PredictCourseCounterfactualRequest`
+  ```json
+  {
+    "student_id": "2642009",
+    "course_code": "CO1023",
+    "semester_code": "HK261",
+    "target_goal": "GRADE_B",
+    "locked_components": null,
+    "allow_improve_recorded_process": true,
+    "what_if_marks": null
+  }
+  ```
+- **Response (`200 OK`)**: `CourseCounterfactualResponse`
+  - Returns `baseline`, minimal-effort feasible `plans`, exact `final_exam_targets`, Dual-XAI `recommendations` (`can_withdraw_hint` is automatically forced to `false` if the semester has no active withdraw deadline or the deadline has passed), and `top_shap_factors`, enriched with DB `course_name`, `credits`, `class_id`, `class_group`, `lecturer_name`.
+
+---
+
+#### 6. On-Demand Grounded Natural-Language AI Advice (`advise-ai`)
+
+- **Endpoint**: `POST /api/v1/predictions/course/advise-ai`
+- **Auth Required**: Yes (`ROLE_STUDENT` own MSSV; `ROLE_LECTURER` / `ROLE_ADMIN`)
+- **Request Body**: `CourseAdviseAIRequest` (extends counterfactual payload with optional `"force_refresh": false`)
+- **Description**: Computes ground-truth counterfactual recourse from `:8001`, checks the `ai_advice_cache` table by SHA-256 input state hash, strips all PII before calling Gemini Interactions API (`gemini-4-hydrogen` with `thinking_level="low"` by default), and falls back safely to deterministic recommendations on missing API key, `429`, or timeout (`HTTP 200` with `source: "fallback"`).
+- **Response (`200 OK`)**: `CourseAdviseAIResponse`
+  ```json
+  {
+    "course_code": "CO1023",
+    "course_name": "Hệ thống số",
+    "semester_code": "HK261",
+    "target_goal": "GRADE_B",
+    "scenario_code": "EARLY_WEAK_START_RECOVERABLE",
+    "advice_markdown": "- Tập trung cải thiện điểm **lab** lên **7.2**...\n- Mục tiêu cuối kỳ tối thiểu **6.9**...",
+    "source": "gemini",
+    "model_name": "gemini-4-hydrogen",
+    "cached_at": "2026-11-25T09:50:00Z"
+  }
+  ```
+
+---
+
 ### Academic Advising & Two-Way Messaging
 
 #### 1. Get Unread Notification Count
@@ -1937,6 +1981,101 @@ export interface ClassPrediction {
 export interface PredictClassPayload {
   class_id: string;
   include_shap?: boolean;
+}
+
+export type TargetGoal = 'PASS' | 'GRADE_C' | 'GRADE_B' | 'GRADE_A';
+export type AdviceSource = 'cache' | 'gemini' | 'fallback';
+
+export interface PredictCourseCounterfactualPayload {
+  student_id: string;
+  course_code: string;
+  semester_code?: string | null;
+  target_goal?: TargetGoal;
+  locked_components?: string[] | null;
+  allow_improve_recorded_process?: boolean;
+  what_if_marks?: Record<string, number | null> | null;
+}
+
+export interface CounterfactualPlan {
+  plan_id: string;
+  title: string;
+  changes: Record<string, number | null>;
+  projected_fail_probability: number;
+  projected_score10: number;
+  projected_letter_grade: string;
+  effort_score: number;
+  is_feasible: boolean;
+}
+
+export interface FinalExamTargetSummary {
+  pass_score: number | null;
+  grade_c_score: number | null;
+  grade_b_score: number | null;
+  grade_a_score: number | null;
+  is_pass_feasible: boolean;
+  used_exact_marks: boolean;
+  final_exam_weight: number;
+}
+
+export interface PedagogicalRecommendation {
+  scenario_code: string;
+  category: string;
+  priority: string;
+  title: string;
+  message: string;
+  targets: Record<string, any>;
+  linked_shap_features: string[];
+  can_withdraw_hint: boolean;
+}
+
+export interface CourseCounterfactualBaseline {
+  fail_probability: number;
+  is_calibrated: boolean;
+  predicted_course_fail: number;
+  is_at_risk: boolean;
+  risk_level: RiskLevel;
+  predicted_score10: number;
+  predicted_gpa4: number;
+  predicted_letter_grade: string;
+  current_marks: Record<string, number | null>;
+  weights: Record<string, number>;
+}
+
+export interface CourseCounterfactual {
+  student_id: string;
+  course_code: string;
+  course_name: string | null;
+  credits: number | null;
+  class_id: string | null;
+  class_group: string | null;
+  lecturer_name: string | null;
+  semester_code: string;
+  target_goal: TargetGoal | string;
+  already_at_target: boolean;
+  is_feasible: boolean;
+  editable_components: string[];
+  inference_time_ms: number;
+  baseline: CourseCounterfactualBaseline;
+  plans: CounterfactualPlan[];
+  final_exam_targets: FinalExamTargetSummary;
+  recommendations: PedagogicalRecommendation[];
+  top_shap_factors: ShapFactor[];
+}
+
+export interface CourseAdviseAIPayload extends PredictCourseCounterfactualPayload {
+  force_refresh?: boolean;
+}
+
+export interface CourseAdviseAI {
+  course_code: string;
+  course_name: string | null;
+  semester_code: string;
+  target_goal: string;
+  scenario_code: string | null;
+  advice_markdown: string;
+  source: AdviceSource;
+  model_name: string | null;
+  cached_at: string | null;
 }
 
 // ==========================================

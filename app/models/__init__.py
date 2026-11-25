@@ -1,5 +1,6 @@
 from app.models.academic_class import AcademicClass
 from app.models.admin import Admin
+from app.models.ai_advice_cache import AIAdviceCache
 from app.models.course import Course, CoursePrerequisite
 from app.models.course_assessment import CourseAssessment
 from app.models.curriculum import Curriculum, KnowledgeBlock, ProgramStructure
@@ -12,6 +13,7 @@ from app.models.user import User
 __all__ = [
     "AcademicClass",
     "Admin",
+    "AIAdviceCache",
     "Course",
     "CoursePrerequisite",
     "CourseAssessment",

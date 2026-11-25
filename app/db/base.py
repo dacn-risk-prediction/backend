@@ -2,6 +2,7 @@
 from app.db.base_class import Base  # noqa: F401
 from app.models.academic_class import AcademicClass  # noqa: F401
 from app.models.admin import Admin  # noqa: F401
+from app.models.ai_advice_cache import AIAdviceCache  # noqa: F401
 from app.models.advising import (  # noqa: F401
     AdvisingActionTask,
     AdvisingAppointment,

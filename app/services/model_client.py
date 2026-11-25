@@ -19,6 +19,40 @@ class ModelServiceClient:
     def __init__(self, base_url: str | None = None):
         self.base_url = (base_url or settings.MODEL_SERVICE_URL).rstrip("/")
 
+    async def _post_json(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        *,
+        timeout: float,
+        not_found_detail: str,
+    ) -> dict[str, Any]:
+        """Execute POST request against Model Service with uniform error mapping."""
+        url = f"{self.base_url}{path}"
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                res = await client.post(url, json=payload)
+                if res.status_code == status.HTTP_404_NOT_FOUND:
+                    detail = res.json().get("detail", not_found_detail)
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+                if res.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
+                    detail = res.json().get("detail", "Models not yet loaded into memory.")
+                    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
+                res.raise_for_status()
+                return res.json()
+        except HTTPException:
+            raise
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Model Service error: {e.response.text}",
+            )
+        except (httpx.RequestError, httpx.TimeoutException):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="AI Model Service is unreachable or timed out. Please check if serve.py is running.",
+            )
+
     async def check_health(self) -> dict[str, Any]:
         """Query the Model Service /health endpoint."""
         url = f"{self.base_url}/health"
@@ -45,7 +79,6 @@ class ModelServiceClient:
         semester_code: str | None = None,
     ) -> dict[str, Any]:
         """Call POST /predict/course on Model Service."""
-        url = f"{self.base_url}/predict/course"
         payload: dict[str, Any] = {
             "student_id": str(student_id).strip(),
             "course_code": str(course_code).strip(),
@@ -53,29 +86,44 @@ class ModelServiceClient:
         if semester_code:
             payload["semester_code"] = str(semester_code).strip()
 
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                res = await client.post(url, json=payload)
-                if res.status_code == status.HTTP_404_NOT_FOUND:
-                    detail = res.json().get("detail", "Student or course not found in model records.")
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
-                if res.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
-                    detail = res.json().get("detail", "Models not yet loaded into memory.")
-                    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
-                res.raise_for_status()
-                return res.json()
-        except HTTPException:
-            raise
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Model Service error: {e.response.text}",
-            )
-        except (httpx.RequestError, httpx.TimeoutException):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="AI Model Service is unreachable or timed out. Please check if serve.py is running.",
-            )
+        return await self._post_json(
+            "/predict/course",
+            payload,
+            timeout=15.0,
+            not_found_detail="Student or course not found in model records.",
+        )
+
+    async def predict_course_counterfactual(
+        self,
+        student_id: str,
+        course_code: str,
+        *,
+        semester_code: str | None = None,
+        target_goal: str = "PASS",
+        locked_components: list[str] | None = None,
+        allow_improve_recorded_process: bool = True,
+        what_if_marks: dict[str, float | None] | None = None,
+    ) -> dict[str, Any]:
+        """Call POST /predict/course/counterfactual on Model Service."""
+        payload: dict[str, Any] = {
+            "student_id": str(student_id).strip(),
+            "course_code": str(course_code).strip(),
+            "target_goal": target_goal,
+            "allow_improve_recorded_process": allow_improve_recorded_process,
+        }
+        if semester_code:
+            payload["semester_code"] = str(semester_code).strip()
+        if locked_components is not None:
+            payload["locked_components"] = locked_components
+        if what_if_marks is not None:
+            payload["what_if_marks"] = what_if_marks
+
+        return await self._post_json(
+            "/predict/course/counterfactual",
+            payload,
+            timeout=10.0,
+            not_found_detail="Student or course not found in model records.",
+        )
 
     async def predict_student(
         self,
@@ -83,36 +131,18 @@ class ModelServiceClient:
         semester_code: str | None = None,
     ) -> dict[str, Any]:
         """Call POST /predict/student on Model Service."""
-        url = f"{self.base_url}/predict/student"
         payload: dict[str, Any] = {
             "student_id": str(student_id).strip(),
         }
         if semester_code:
             payload["semester_code"] = str(semester_code).strip()
 
-        try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                res = await client.post(url, json=payload)
-                if res.status_code == status.HTTP_404_NOT_FOUND:
-                    detail = res.json().get("detail", f"Student '{student_id}' has no registered courses in target semester.")
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
-                if res.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
-                    detail = res.json().get("detail", "Models not yet loaded into memory.")
-                    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
-                res.raise_for_status()
-                return res.json()
-        except HTTPException:
-            raise
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Model Service error: {e.response.text}",
-            )
-        except (httpx.RequestError, httpx.TimeoutException):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="AI Model Service is unreachable or timed out. Please check if serve.py is running.",
-            )
+        return await self._post_json(
+            "/predict/student",
+            payload,
+            timeout=20.0,
+            not_found_detail=f"Student '{student_id}' has no registered courses in target semester.",
+        )
 
     async def predict_class(
         self,
@@ -120,35 +150,16 @@ class ModelServiceClient:
         include_shap: bool = True,
     ) -> dict[str, Any]:
         """Call POST /predict/class on Model Service for batch class prediction and analytics."""
-        url = f"{self.base_url}/predict/class"
         payload: dict[str, Any] = {
             "class_id": str(class_id).strip(),
             "include_shap": include_shap,
         }
-
-        try:
-            async with httpx.AsyncClient(timeout=25.0) as client:
-                res = await client.post(url, json=payload)
-                if res.status_code == status.HTTP_404_NOT_FOUND:
-                    detail = res.json().get("detail", f"Class '{class_id}' not found in enrollment records.")
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
-                if res.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
-                    detail = res.json().get("detail", "Models not yet loaded into memory.")
-                    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
-                res.raise_for_status()
-                return res.json()
-        except HTTPException:
-            raise
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Model Service error: {e.response.text}",
-            )
-        except (httpx.RequestError, httpx.TimeoutException):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="AI Model Service is unreachable or timed out. Please check if serve.py is running.",
-            )
+        return await self._post_json(
+            "/predict/class",
+            payload,
+            timeout=25.0,
+            not_found_detail=f"Class '{class_id}' not found in enrollment records.",
+        )
 
 
 model_client = ModelServiceClient()

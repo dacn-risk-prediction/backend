@@ -3,6 +3,7 @@ from app.repositories.academic_class import (
     academic_class_repo,
 )
 from app.repositories.admin import AdminRepository, admin_repo
+from app.repositories.ai_advice_cache import AIAdviceCacheRepository, ai_advice_cache_repo
 from app.repositories.advising import AdvisingRepository, advising_repo
 from app.repositories.course import CourseRepository, course_repo
 from app.repositories.course_assessment import (
@@ -26,6 +27,7 @@ from app.repositories.user import UserRepository, user_repo
 __all__ = [
     "AcademicClassRepository",
     "AdminRepository",
+    "AIAdviceCacheRepository",
     "AdvisingRepository",
     "CourseAssessmentRepository",
     "CourseRepository",
@@ -39,6 +41,7 @@ __all__ = [
     "UserRepository",
     "academic_class_repo",
     "admin_repo",
+    "ai_advice_cache_repo",
     "advising_repo",
     "course_assessment_repo",
     "course_repo",

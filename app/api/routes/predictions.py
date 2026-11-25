@@ -9,6 +9,7 @@ Adheres to .agent/rules/fastapi-backend.md:
 - Rule 4: Validates with Pydantic v2 schemas and enriches output with course metadata.
 """
 
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -21,20 +22,35 @@ from app.repositories import (
     academic_class_repo,
     course_repo,
     enrollment_repo,
+    semester_repo,
     student_repo,
 )
 from app.schemas.prediction import (
     ClassPredictionResponse,
+    CourseAdviseAIRequest,
+    CourseAdviseAIResponse,
+    CourseCounterfactualResponse,
     CoursePredictionResponse,
     ModelHealthResponse,
     PredictClassRequest,
+    PredictCourseCounterfactualRequest,
     PredictCourseRequest,
     PredictStudentRequest,
     StudentPredictionResponse,
 )
+from app.services.ai_advisor import generate_grounded_advice
 from app.services.model_client import model_client
 
 router = APIRouter()
+
+
+def _ensure_student_prediction_access(current_user: CurrentUser, student_id: str) -> None:
+    """Block students from querying prediction/advice data for another student."""
+    if current_user.role == ROLE_STUDENT and student_id != current_user.user_code:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: students can only access their own prediction records",
+        )
 
 
 def _ensure_student_exists(db: Session, student_id: str) -> None:
@@ -135,6 +151,58 @@ def _enrich_class_prediction(
     return prediction
 
 
+def _enrich_course_counterfactual(
+    db: Session,
+    prediction: dict[str, Any],
+    *,
+    student_id: str,
+    course_code: str,
+) -> dict[str, Any]:
+    """Enrich counterfactual response with course/lecturer info and enforce semester withdraw deadline."""
+    _enrich_course_prediction(db, prediction, student_id=student_id, course_code=course_code)
+
+    sem_code = prediction.get("semester_code")
+    semester = semester_repo.get_by_code(db, sem_code) if sem_code else None
+    deadline = getattr(semester, "withdraw_deadline", None) if semester else None
+    if deadline is not None and deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=timezone.utc)
+    withdraw_allowed = bool(
+        semester and semester.is_active and deadline is not None and deadline >= datetime.now(timezone.utc)
+    )
+    if not withdraw_allowed:
+        for rec in prediction.get("recommendations", []):
+            rec["can_withdraw_hint"] = False
+
+    return prediction
+
+
+async def _fetch_enriched_counterfactual(
+    payload: PredictCourseCounterfactualRequest,
+    current_user: CurrentUser,
+    db: SessionDep,
+) -> dict[str, Any]:
+    """Shared RBAC, Model Service call, and DB enrichment for counterfactual & advise-ai endpoints."""
+    _ensure_student_prediction_access(current_user, payload.student_id)
+    await run_in_threadpool(_ensure_student_exists, db, payload.student_id)
+
+    prediction = await model_client.predict_course_counterfactual(
+        student_id=payload.student_id,
+        course_code=payload.course_code,
+        semester_code=payload.semester_code,
+        target_goal=payload.target_goal,
+        locked_components=payload.locked_components,
+        allow_improve_recorded_process=payload.allow_improve_recorded_process,
+        what_if_marks=payload.what_if_marks,
+    )
+    return await run_in_threadpool(
+        _enrich_course_counterfactual,
+        db,
+        prediction,
+        student_id=payload.student_id,
+        course_code=payload.course_code,
+    )
+
+
 @router.get(
     "/health",
     response_model=ModelHealthResponse,
@@ -181,6 +249,43 @@ async def predict_course(
         course_code=payload.course_code,
     )
     return CoursePredictionResponse.model_validate(enriched)
+
+
+@router.post(
+    "/course/counterfactual",
+    response_model=CourseCounterfactualResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Compute constrained counterfactual recourse plans and 13-scenario pedagogical advice",
+)
+async def predict_course_counterfactual(
+    payload: PredictCourseCounterfactualRequest,
+    current_user: CurrentUser,
+    db: SessionDep,
+) -> CourseCounterfactualResponse:
+    """Compute minimal-effort feasible plans, exact final exam targets, and pedagogical advice."""
+    enriched = await _fetch_enriched_counterfactual(payload, current_user, db)
+    return CourseCounterfactualResponse.model_validate(enriched)
+
+
+@router.post(
+    "/course/advise-ai",
+    response_model=CourseAdviseAIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generate on-demand grounded natural-language AI advice with cache and fallback",
+)
+async def advise_course_with_ai(
+    payload: CourseAdviseAIRequest,
+    current_user: CurrentUser,
+    db: SessionDep,
+) -> CourseAdviseAIResponse:
+    """Produce concise Vietnamese academic advice grounded in counterfactual numbers, cached by state hash."""
+    enriched = await _fetch_enriched_counterfactual(payload, current_user, db)
+    advice_result = await generate_grounded_advice(
+        db,
+        enriched,
+        force_refresh=payload.force_refresh,
+    )
+    return CourseAdviseAIResponse.model_validate(advice_result)
 
 
 @router.get(
