@@ -157,9 +157,47 @@ class AdvisingActionTaskResponse(AdvisingActionTaskBase):
 
 
 # ==============================================================================
-# Unread Badge Schemas
+# Unread Badge & Notification Feed Schemas
 # ==============================================================================
 
 class UnreadCountResponse(BaseModel):
     """Count of unread messages across all advising channels for the user."""
     unread_count: int = Field(..., ge=0, description="Total unread messages")
+
+
+class AdvisingNotificationItem(BaseModel):
+    """Single advising notification event (message, appointment, or task update)."""
+    id: uuid.UUID
+    session_id: uuid.UUID
+    course_code: str
+    course_name: Optional[str] = None
+    semester_code: str
+    student_id: str
+    student_name: Optional[str] = None
+    lecturer_id: str
+    lecturer_name: Optional[str] = None
+    sender_id: str
+    sender_role: str
+    sender_name: str
+    message_type: str
+    content: str
+    is_read: bool
+    read_at: Optional[datetime] = None
+    created_at: datetime
+    direction: Literal["received", "sent"]
+
+
+class AdvisingNotificationListResponse(BaseModel):
+    """Paginated advising notification feed with summary counters."""
+    items: list[AdvisingNotificationItem]
+    total: int = Field(..., ge=0)
+    unread_count: int = Field(..., ge=0)
+    received_count: int = Field(..., ge=0)
+    sent_count: int = Field(..., ge=0)
+    has_more: bool = False
+
+
+class MarkReadResponse(BaseModel):
+    """Response returned after marking session or all notifications as read."""
+    marked_count: int = Field(..., ge=0)
+    unread_count: int = Field(..., ge=0)

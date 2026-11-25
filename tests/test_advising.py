@@ -98,13 +98,25 @@ def test_advising_messages_unread_count_and_session_details(
     )
     assert forbidden_res.status_code == status.HTTP_403_FORBIDDEN
 
-    # Fetching messages as student auto-marks them as read
+    # Fetching messages with default mark_read=False must NOT clear unread_count
     msgs_res = client.get(
         f"/api/v1/advising/sessions/{session_id}/messages",
         headers=auth_headers(student_user),
     )
     assert msgs_res.status_code == status.HTTP_200_OK
     assert len(msgs_res.json()) == 1
+
+    unread_still = client.get("/api/v1/advising/unread-count", headers=auth_headers(student_user))
+    assert unread_still.json()["unread_count"] == 1
+
+    # Explicitly marking the session as read clears unread_count
+    read_res = client.post(
+        f"/api/v1/advising/sessions/{session_id}/read",
+        headers=auth_headers(student_user),
+    )
+    assert read_res.status_code == status.HTTP_200_OK
+    assert read_res.json()["marked_count"] == 1
+    assert read_res.json()["unread_count"] == 0
 
     unread_after = client.get("/api/v1/advising/unread-count", headers=auth_headers(student_user))
     assert unread_after.json()["unread_count"] == 0
@@ -202,3 +214,90 @@ def test_advising_task_and_appointment_role_permissions(
     )
     assert lecturer_complete.status_code == status.HTTP_200_OK
     assert lecturer_complete.json()["status"] == "COMPLETED"
+
+
+def test_advising_notifications_feed_history_and_read_all(
+    client: TestClient,
+    seeded_entities: dict[str, object],
+) -> None:
+    lecturer_user = seeded_entities["lecturer_user"]
+    student_user = seeded_entities["student_user"]
+
+    sess_res = client.post(
+        "/api/v1/advising/sessions",
+        headers=auth_headers(lecturer_user),
+        json={
+            "student_id": student_user.user_code,
+            "course_code": "CO2017",
+            "semester_code": "HK261",
+            "topic": "Thong bao da su kien",
+            "risk_level": "WARNING",
+        },
+    )
+    session_id = sess_res.json()["id"]
+
+    # Lecturer triggers 3 events (message + task + appointment) in the same session
+    client.post(
+        f"/api/v1/advising/sessions/{session_id}/messages",
+        headers=auth_headers(lecturer_user),
+        json={"content": "Tin nhan 1", "message_type": "NOTICE"},
+    )
+    task_res = client.post(
+        f"/api/v1/advising/sessions/{session_id}/tasks",
+        headers=auth_headers(lecturer_user),
+        json={"title": "On tap chuong 4", "deadline": "30/11/2026", "priority": "HIGH"},
+    )
+    appt_res = client.post(
+        f"/api/v1/advising/sessions/{session_id}/appointments",
+        headers=auth_headers(lecturer_user),
+        json={
+            "subject": "Gap trao doi",
+            "time_slot": "Thu 3 14:00",
+            "meeting_type": "OFFICE",
+            "location": "P.503 H6",
+        },
+    )
+
+    # Student notification feed preserves ALL 3 individual events (no overwriting)
+    stu_feed = client.get(
+        "/api/v1/advising/notifications?direction=received&limit=20",
+        headers=auth_headers(student_user),
+    )
+    assert stu_feed.status_code == status.HTTP_200_OK
+    stu_data = stu_feed.json()
+    assert stu_data["total"] == 3
+    assert stu_data["unread_count"] == 3
+    assert len(stu_data["items"]) == 3
+    assert all(item["direction"] == "received" for item in stu_data["items"])
+
+    # Student toggles task and cancels appointment -> Lecturer receives 2 new unread notices
+    client.patch(
+        f"/api/v1/advising/tasks/{task_res.json()['id']}/toggle",
+        headers=auth_headers(student_user),
+        json={"completed": True},
+    )
+    client.patch(
+        f"/api/v1/advising/appointments/{appt_res.json()['id']}/status",
+        headers=auth_headers(student_user),
+        json={"status": "CANCELLED"},
+    )
+
+    lec_feed = client.get(
+        "/api/v1/advising/notifications?direction=all&limit=20",
+        headers=auth_headers(lecturer_user),
+    )
+    assert lec_feed.status_code == status.HTTP_200_OK
+    lec_data = lec_feed.json()
+    assert lec_data["total"] == 5
+    assert lec_data["sent_count"] == 3
+    assert lec_data["received_count"] == 2
+    assert lec_data["unread_count"] == 2
+
+    # Mark all read for student clears all 3 unread notifications
+    read_all = client.post(
+        "/api/v1/advising/read-all",
+        headers=auth_headers(student_user),
+    )
+    assert read_all.status_code == status.HTTP_200_OK
+    assert read_all.json()["marked_count"] == 3
+    assert read_all.json()["unread_count"] == 0
