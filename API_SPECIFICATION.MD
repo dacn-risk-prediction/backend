@@ -1278,7 +1278,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
 - **Endpoint**: `POST /api/v1/predictions/course/advise-ai`
 - **Auth Required**: Yes (`ROLE_STUDENT` own MSSV; `ROLE_LECTURER` / `ROLE_ADMIN`)
 - **Request Body**: `CourseAdviseAIRequest` (extends counterfactual payload with optional `"force_refresh": false`)
-- **Description**: Computes ground-truth counterfactual recourse from `:8001`, checks the `ai_advice_cache` table by SHA-256 input state hash, strips all PII before calling Gemini Interactions API (`gemini-4-hydrogen` with `thinking_level="low"` by default), and falls back safely to deterministic recommendations on missing API key, `429`, or timeout (`HTTP 200` with `source: "fallback"`).
+- **Description**: Computes ground-truth counterfactual recourse from `:8001`, checks the `ai_advice_cache` table by SHA-256 input state hash, strips all PII before calling Gemini Interactions API (`gemini-3.5-flash-lite` with `thinking_level="minimal"` by default), and falls back safely to deterministic recommendations on missing API key, `429`, or timeout (`HTTP 200` with `source: "fallback"`).
 - **Response (`200 OK`)**: `CourseAdviseAIResponse`
   ```json
   {
@@ -1289,7 +1289,7 @@ Returned when payload fails validation (e.g. invalid email format, missing requi
     "scenario_code": "EARLY_WEAK_START_RECOVERABLE",
     "advice_markdown": "- Tập trung cải thiện điểm **lab** lên **7.2**...\n- Mục tiêu cuối kỳ tối thiểu **6.9**...",
     "source": "gemini",
-    "model_name": "gemini-4-hydrogen",
+    "model_name": "gemini-3.5-flash-lite",
     "cached_at": "2026-11-25T09:50:00Z"
   }
   ```
@@ -1777,6 +1777,7 @@ export interface Semester {
   academic_year: string;
   term: number;
   is_active: boolean;
+  withdraw_deadline?: string | null;
 }
 
 export interface SemesterCreatePayload {
@@ -1784,12 +1785,14 @@ export interface SemesterCreatePayload {
   academic_year: string;
   term: number;
   is_active?: boolean;
+  withdraw_deadline?: string | null;
 }
 
 export interface SemesterUpdatePayload {
   academic_year?: string;
   term?: number;
   is_active?: boolean;
+  withdraw_deadline?: string | null;
 }
 
 // ==========================================

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -22,6 +24,11 @@ class SemesterBase(BaseModel):
         description="Whether this semester is the currently active term",
         examples=[False],
     )
+    withdraw_deadline: datetime | None = Field(
+        default=None,
+        description="Optional deadline until which course withdrawal hints remain valid",
+        examples=["2026-11-30T23:59:59Z"],
+    )
 
 
 class SemesterCreate(SemesterBase):
@@ -40,6 +47,7 @@ class SemesterUpdate(BaseModel):
     academic_year: str | None = Field(default=None, min_length=1, max_length=20)
     term: int | None = Field(default=None, ge=1, le=4)
     is_active: bool | None = Field(default=None, description="Whether this semester is the currently active term")
+    withdraw_deadline: datetime | None = Field(default=None, description="Updated course withdrawal deadline")
 
 
 class SemesterResponse(SemesterBase):

@@ -13,6 +13,9 @@ import sqlalchemy as sa
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 MIGRATION_PATH = BACKEND_ROOT / "alembic" / "versions" / "a1f4c8e92d10_sync_students_clean_columns.py"
 CACHE_MIGRATION_PATH = BACKEND_ROOT / "alembic" / "versions" / "0ba7ef565c09_add_ai_advice_cache_table.py"
+SEMESTER_DEADLINE_MIGRATION_PATH = (
+    BACKEND_ROOT / "alembic" / "versions" / "8cb8aae46e53_add_withdraw_deadline_to_semesters.py"
+)
 
 
 def _load_migration(path: Path, name: str):
@@ -27,7 +30,43 @@ def test_alembic_has_single_head_at_latest_revision() -> None:
     cfg = Config(str(BACKEND_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["0ba7ef565c09"]
+    assert script.get_heads() == ["8cb8aae46e53"]
+
+
+def test_semester_withdraw_deadline_migration_upgrade_and_downgrade() -> None:
+    """Verify withdraw_deadline column is added and removed idempotently on semesters."""
+    engine = sa.create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                """
+                CREATE TABLE semesters (
+                    semester_code VARCHAR(20) PRIMARY KEY,
+                    academic_year VARCHAR(20) NOT NULL,
+                    term INTEGER NOT NULL,
+                    is_active BOOLEAN NOT NULL DEFAULT 0
+                )
+                """
+            )
+        )
+        migration = _load_migration(SEMESTER_DEADLINE_MIGRATION_PATH, "semester_deadline_migration")
+        ctx = MigrationContext.configure(conn)
+        with Operations.context(ctx) as ops:
+            migration.op = ops
+            migration.upgrade()
+            # Calling upgrade again must be idempotent
+            migration.upgrade()
+
+        cols = {c["name"] for c in sa.inspect(conn).get_columns("semesters")}
+        assert "withdraw_deadline" in cols
+
+        with Operations.context(ctx) as ops:
+            migration.op = ops
+            migration.downgrade()
+
+        cols_after = {c["name"] for c in sa.inspect(conn).get_columns("semesters")}
+        assert "withdraw_deadline" not in cols_after
+    engine.dispose()
 
 
 def test_ai_advice_cache_migration_upgrade_and_downgrade() -> None:

@@ -1,6 +1,7 @@
 """Tests for AI prediction endpoints, counterfactuals, Gemini advise-ai, DB enrichment, RBAC, and 503 handling."""
 
 import json
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
 import httpx
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.enrollment import Enrollment
+from app.repositories import ai_advice_cache_repo
 from app.services.ai_advisor import key_rotator
 from app.services.model_client import model_client
 from tests.conftest import auth_headers
@@ -301,6 +303,51 @@ def test_counterfactual_rbac_enrichment_and_withdraw_deadline_guard(
     assert body["plans"][0]["plan_id"] == "cf_1"
     assert body["recommendations"][0]["can_withdraw_hint"] is False
 
+    # 3. Future withdraw_deadline on active semester preserves can_withdraw_hint=True
+    semester = seeded_entities["semester"]
+    semester.withdraw_deadline = datetime.now(timezone.utc) + timedelta(days=7)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        model_client,
+        "predict_course_counterfactual",
+        AsyncMock(return_value=_sample_counterfactual_payload(student_user.user_code)),
+    )
+    res_open = client.post(
+        "/api/v1/predictions/course/counterfactual",
+        json={
+            "student_id": student_user.user_code,
+            "course_code": "CO2017",
+            "semester_code": "HK261",
+            "target_goal": "GRADE_B",
+        },
+        headers=auth_headers(student_user),
+    )
+    assert res_open.status_code == status.HTTP_200_OK
+    assert res_open.json()["recommendations"][0]["can_withdraw_hint"] is True
+
+    # 4. Expired withdraw_deadline forces can_withdraw_hint=False again
+    semester.withdraw_deadline = datetime.now(timezone.utc) - timedelta(days=1)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        model_client,
+        "predict_course_counterfactual",
+        AsyncMock(return_value=_sample_counterfactual_payload(student_user.user_code)),
+    )
+    res_expired = client.post(
+        "/api/v1/predictions/course/counterfactual",
+        json={
+            "student_id": student_user.user_code,
+            "course_code": "CO2017",
+            "semester_code": "HK261",
+            "target_goal": "GRADE_B",
+        },
+        headers=auth_headers(student_user),
+    )
+    assert res_expired.status_code == status.HTTP_200_OK
+    assert res_expired.json()["recommendations"][0]["can_withdraw_hint"] is False
+
 
 def test_advise_ai_pii_anonymization_and_cache_hit(
     client: TestClient,
@@ -578,3 +625,54 @@ def test_advise_ai_round_robin_key_rotation_and_429_failover(
     assert res_all_429.status_code == status.HTTP_200_OK
     assert res_all_429.json()["source"] == "fallback"
     assert all_429_attempts == ["key-3", "key-1", "key-2"]
+
+
+def test_ai_advice_cache_upsert_recovers_from_concurrent_integrity_error(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Simulate a concurrent insert race on identical input_hash and verify clean recovery."""
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=7)
+
+    # First writer persists the hash cleanly
+    ai_advice_cache_repo.upsert(
+        db_session,
+        input_hash="race-hash-123",
+        student_id="2610001",
+        course_code="CO2017",
+        semester_code="HK261",
+        scenario_code="EARLY_WEAK_START_RECOVERABLE",
+        advice_markdown="- Initial concurrent advice",
+        model_name="gemini-3.5-flash-lite",
+        expires_at=expires,
+        now=now,
+    )
+
+    # Simulate second concurrent writer whose pre-check saw None before the first committed
+    real_get_by_hash = ai_advice_cache_repo.get_by_hash
+    calls = {"count": 0}
+
+    def _stale_first_lookup(db: Session, input_hash: str):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return None
+        return real_get_by_hash(db, input_hash)
+
+    monkeypatch.setattr(ai_advice_cache_repo, "get_by_hash", _stale_first_lookup)
+
+    recovered = ai_advice_cache_repo.upsert(
+        db_session,
+        input_hash="race-hash-123",
+        student_id="2610001",
+        course_code="CO2017",
+        semester_code="HK261",
+        scenario_code="EARLY_WEAK_START_RECOVERABLE",
+        advice_markdown="- Updated after IntegrityError rollback",
+        model_name="gemini-3.5-flash-lite",
+        expires_at=expires,
+        now=now,
+    )
+
+    assert calls["count"] == 2
+    assert recovered.advice_markdown == "- Updated after IntegrityError rollback"

@@ -163,7 +163,7 @@ def _enrich_course_counterfactual(
 
     sem_code = prediction.get("semester_code")
     semester = semester_repo.get_by_code(db, sem_code) if sem_code else None
-    deadline = getattr(semester, "withdraw_deadline", None) if semester else None
+    deadline = semester.withdraw_deadline if semester else None
     if deadline is not None and deadline.tzinfo is None:
         deadline = deadline.replace(tzinfo=timezone.utc)
     withdraw_allowed = bool(

@@ -64,6 +64,7 @@ class SemesterRepository:
             academic_year=obj_in.academic_year,
             term=obj_in.term,
             is_active=obj_in.is_active,
+            withdraw_deadline=obj_in.withdraw_deadline,
         )
         db.add(db_obj)
         db.commit()

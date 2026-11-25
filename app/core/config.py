@@ -25,9 +25,9 @@ class Settings(BaseSettings):
 
     # Gemini AI Advisor (On-demand grounded advice; GEMINI_API_KEY supports comma-separated keys)
     GEMINI_API_KEY: str | None = None
-    GEMINI_MODEL: str = "gemini-4-hydrogen"
-    GEMINI_THINKING_LEVEL: str = "low"
-    GEMINI_TIMEOUT_SECONDS: float = 12.0
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
+    GEMINI_THINKING_LEVEL: str = "minimal"
+    GEMINI_TIMEOUT_SECONDS: float = 5.0
     AI_ADVICE_CACHE_TTL_DAYS: int = 7
 
     @property
