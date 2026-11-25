@@ -15,17 +15,26 @@ TOKEN_TYPE_REFRESH = "refresh"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify plaintext password against bcrypt hash."""
-    return bcrypt.checkpw(
-        plain_password.encode("utf-8"),
-        hashed_password.encode("utf-8"),
-    )
+    """Verify plaintext password against bcrypt hash safely."""
+    try:
+        plain_bytes = plain_password.encode("utf-8")
+        if len(plain_bytes) > 72:
+            return False
+        return bcrypt.checkpw(
+            plain_bytes,
+            hashed_password.encode("utf-8"),
+        )
+    except (ValueError, TypeError):
+        return False
 
 
 def get_password_hash(password: str) -> str:
-    """Hash password using bcrypt with salt."""
+    """Hash password using bcrypt with salt (enforces bcrypt 72-byte limit)."""
+    password_bytes = password.encode("utf-8")
+    if len(password_bytes) > 72:
+        raise ValueError("Password must not exceed 72 UTF-8 bytes")
     salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+    return bcrypt.hashpw(password_bytes, salt).decode("utf-8")
 
 
 def create_access_token(

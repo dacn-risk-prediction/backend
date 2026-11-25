@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.models.semester import Semester
@@ -16,8 +16,13 @@ class SemesterRepository:
         return db.scalar(statement)
 
     def get_active_semester(self, db: Session) -> Semester | None:
-        """Fetch the currently active semester."""
-        statement = select(Semester).where(Semester.is_active.is_(True))
+        """Fetch the currently active semester deterministically (newest first)."""
+        statement = (
+            select(Semester)
+            .where(Semester.is_active.is_(True))
+            .order_by(Semester.semester_code.desc())
+            .limit(1)
+        )
         return db.scalar(statement)
 
     def get_multi(
@@ -58,7 +63,13 @@ class SemesterRepository:
         return db.scalar(statement) or 0
 
     def create(self, db: Session, *, obj_in: SemesterCreate) -> Semester:
-        """Create and persist a new semester."""
+        """Create and persist a new semester (atomically deactivating others if is_active=True)."""
+        if obj_in.is_active:
+            db.execute(
+                update(Semester)
+                .where(Semester.is_active.is_(True))
+                .values(is_active=False)
+            )
         db_obj = Semester(
             semester_code=obj_in.semester_code,
             academic_year=obj_in.academic_year,
@@ -78,11 +89,26 @@ class SemesterRepository:
         db_obj: Semester,
         obj_in: SemesterUpdate | dict[str, Any],
     ) -> Semester:
-        """Update an existing semester."""
+        """Update an existing semester (atomically enforcing single active semester)."""
         if isinstance(obj_in, dict):
-            update_data = obj_in
+            update_data = dict(obj_in)
         else:
             update_data = obj_in.model_dump(exclude_unset=True)
+
+        # Prevent overwriting non-nullable columns with explicit null
+        for non_nullable in ("academic_year", "term", "is_active"):
+            if non_nullable in update_data and update_data[non_nullable] is None:
+                update_data.pop(non_nullable)
+
+        if update_data.get("is_active") is True:
+            db.execute(
+                update(Semester)
+                .where(
+                    Semester.is_active.is_(True),
+                    Semester.semester_code != db_obj.semester_code,
+                )
+                .values(is_active=False)
+            )
 
         for field, value in update_data.items():
             setattr(db_obj, field, value)

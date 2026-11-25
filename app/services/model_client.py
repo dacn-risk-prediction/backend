@@ -19,6 +19,17 @@ class ModelServiceClient:
     def __init__(self, base_url: str | None = None):
         self.base_url = (base_url or settings.MODEL_SERVICE_URL).rstrip("/")
 
+    @staticmethod
+    def _safe_extract_detail(res: httpx.Response, fallback: str) -> str:
+        """Safely extract error detail from upstream JSON without crashing on non-JSON bodies."""
+        try:
+            data = res.json()
+            if isinstance(data, dict) and isinstance(data.get("detail"), str):
+                return data["detail"]
+        except ValueError:
+            pass
+        return fallback
+
     async def _post_json(
         self,
         path: str,
@@ -33,21 +44,25 @@ class ModelServiceClient:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 res = await client.post(url, json=payload)
                 if res.status_code == status.HTTP_404_NOT_FOUND:
-                    detail = res.json().get("detail", not_found_detail)
+                    detail = self._safe_extract_detail(res, not_found_detail)
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
                 if res.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
-                    detail = res.json().get("detail", "Models not yet loaded into memory.")
+                    detail = self._safe_extract_detail(res, "Models not yet loaded into memory.")
                     raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
                 res.raise_for_status()
                 return res.json()
         except HTTPException:
             raise
         except httpx.HTTPStatusError as e:
+            detail = self._safe_extract_detail(
+                e.response,
+                f"Model Service returned HTTP {e.response.status_code}",
+            )
             raise HTTPException(
                 status_code=e.response.status_code,
-                detail=f"Model Service error: {e.response.text}",
+                detail=f"Model Service error: {detail}",
             )
-        except (httpx.RequestError, httpx.TimeoutException):
+        except (httpx.RequestError, httpx.TimeoutException, ValueError):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="AI Model Service is unreachable or timed out. Please check if serve.py is running.",
@@ -62,11 +77,15 @@ class ModelServiceClient:
                 res.raise_for_status()
                 return res.json()
         except httpx.HTTPStatusError as e:
+            detail = self._safe_extract_detail(
+                e.response,
+                f"Model Service returned HTTP {e.response.status_code}",
+            )
             raise HTTPException(
                 status_code=e.response.status_code,
-                detail=f"Model Service error: {e.response.text}",
+                detail=f"Model Service error: {detail}",
             )
-        except (httpx.RequestError, httpx.TimeoutException):
+        except (httpx.RequestError, httpx.TimeoutException, ValueError):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="AI Model Service is currently unavailable. Please verify it is running on port 8001.",

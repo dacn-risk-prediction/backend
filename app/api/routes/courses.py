@@ -116,12 +116,26 @@ def add_prerequisite(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="URL course_code does not match payload course_code",
         )
-    target_course = course_repo.get_by_code(db, course_code)
+    if prereq_in.course_code == prereq_in.related_course_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A course cannot be a prerequisite of itself",
+        )
+    target_course = course_repo.get_with_prerequisites(db, course_code)
     related_course = course_repo.get_by_code(db, prereq_in.related_course_code)
     if not target_course or not related_course:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Either target course or prerequisite course does not exist",
+        )
+    if any(
+        p.related_course_code == prereq_in.related_course_code
+        and p.relation_type == prereq_in.relation_type
+        for p in target_course.prerequisites
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This prerequisite relationship already exists",
         )
     return course_repo.add_prerequisite(db, obj_in=prereq_in)
 

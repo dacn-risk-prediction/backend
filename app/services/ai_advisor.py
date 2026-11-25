@@ -19,8 +19,10 @@ logger = logging.getLogger(__name__)
 GEMINI_INTERACTIONS_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 
 
-def _extract_gemini_text(data: dict[str, Any]) -> str | None:
+def _extract_gemini_text(data: Any) -> str | None:
     """Extract text from Interactions API (`steps` / `outputs`) or legacy `candidates`."""
+    if not isinstance(data, dict):
+        return None
     steps_text = "".join(
         content.get("text", "")
         for step in data.get("steps") or []
@@ -92,8 +94,18 @@ def compute_advice_input_hash(cf_result: dict[str, Any]) -> str:
         "course_code": cf_result.get("course_code"),
         "semester_code": cf_result.get("semester_code"),
         "target_goal": cf_result.get("target_goal"),
+        "model_name": settings.GEMINI_MODEL,
         "current_marks": baseline.get("current_marks") or {},
-        "scenario_codes": [rec.get("scenario_code") for rec in recommendations],
+        "predicted_score10": baseline.get("predicted_score10"),
+        "fail_probability": baseline.get("fail_probability"),
+        "final_exam_targets": cf_result.get("final_exam_targets") or {},
+        "recommendations": [
+            {
+                "scenario_code": rec.get("scenario_code"),
+                "can_withdraw_hint": bool(rec.get("can_withdraw_hint", False)),
+            }
+            for rec in recommendations
+        ],
         "top_plan_changes": [plan.get("changes") or {} for plan in plans[:3]],
     }
     serialized = json.dumps(canonical_payload, sort_keys=True, ensure_ascii=False, default=str)

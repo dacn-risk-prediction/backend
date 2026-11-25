@@ -99,8 +99,25 @@ def update_user(user_id: uuid.UUID, user_in: UserUpdate, db: SessionDep):
             detail=f"User with ID '{user_id}' not found",
         )
     update_data = user_in.model_dump(exclude_unset=True)
-    if "password" in update_data and update_data["password"]:
-        update_data["password_hash"] = get_password_hash(update_data.pop("password"))
+    raw_password = update_data.pop("password", None)
+    if raw_password:
+        update_data["password_hash"] = get_password_hash(raw_password)
+
+    # Prevent overwriting non-nullable columns with explicit null
+    for non_nullable in ("name", "email", "role"):
+        if non_nullable in update_data and update_data[non_nullable] is None:
+            update_data.pop(non_nullable)
+
+    if "email" in update_data:
+        normalized_email = update_data["email"].strip().lower()
+        existing_email = user_repo.get_by_email(db, normalized_email)
+        if existing_email and existing_email.id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"User with email '{normalized_email}' already exists",
+            )
+        update_data["email"] = normalized_email
+
     return user_repo.update(db, db_obj=user, obj_in=update_data)
 
 
