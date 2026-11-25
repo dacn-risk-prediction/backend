@@ -1,0 +1,10 @@
+{
+  "name": "backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Student Academic Performance & Dropout Early Warning System - Backend API",
+  "scripts": {
+    "dev": "uv run uvicorn app.main:app --reload --port 8000",
+    "migrate": "uv run alembic upgrade head"
+  }
+}
