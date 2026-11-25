@@ -1,15 +1,29 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import SessionDep
-from app.repositories import admin_repo
+from app.repositories import admin_repo, semester_repo
 from app.schemas.admin import (
     AdminCreate,
     AdminDetailResponse,
     AdminResponse,
+    AdminSystemStatsResponse,
     AdminUpdate,
 )
 
 router = APIRouter()
+
+
+@router.get(
+    "/stats",
+    response_model=AdminSystemStatsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get exact system-wide entity counts for Admin Dashboard",
+)
+def get_admin_system_stats(db: SessionDep):
+    """Return exact SQL COUNT(*) totals across core entities without pagination truncation."""
+    active_sem = semester_repo.get_active_semester(db)
+    active_code = active_sem.semester_code if active_sem else None
+    return admin_repo.get_system_stats(db, active_semester_code=active_code)
 
 
 @router.get(
