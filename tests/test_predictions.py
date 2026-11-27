@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.rate_limit import ai_force_refresh_limiter
 from app.models.enrollment import Enrollment
 from app.repositories import ai_advice_cache_repo
 from app.services.ai_advisor import key_rotator
@@ -165,6 +166,7 @@ def test_class_prediction_rbac_and_enrichment(
 
 def test_model_health_propagates_503_when_upstream_unavailable(
     client: TestClient,
+    seeded_entities: dict[str, object],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def _fail_health():
@@ -174,7 +176,10 @@ def test_model_health_propagates_503_when_upstream_unavailable(
         )
 
     monkeypatch.setattr(model_client, "check_health", _fail_health)
-    res = client.get("/api/v1/predictions/health")
+    res = client.get(
+        "/api/v1/predictions/health",
+        headers=auth_headers(seeded_entities["admin_user"]),
+    )
     assert res.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
 
@@ -538,6 +543,7 @@ def test_advise_ai_round_robin_key_rotation_and_429_failover(
         AsyncMock(return_value=_sample_counterfactual_payload(student_user.user_code)),
     )
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "key-1, key-2, key-3, key-1")
+    monkeypatch.setattr(ai_force_refresh_limiter, "max_requests", 20)
     key_rotator.reset()
 
     used_keys: list[str] = []

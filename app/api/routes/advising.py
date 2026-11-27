@@ -37,24 +37,33 @@ router = APIRouter()
 
 
 def _get_and_verify_session(session_id: uuid.UUID, user: User, db: SessionDep) -> AdvisingSession:
-    """Verify session existence and ensure user has permission to access it."""
+    """Verify session existence and enforce strict allowlist ownership."""
     session = advising_repo.get_session_by_id(db, session_id)
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Advising session '{session_id}' not found",
         )
-    if user.role == ROLE_STUDENT and session.student_id != user.user_code:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access forbidden: you do not own this advising session",
-        )
-    if user.role == ROLE_LECTURER and session.lecturer_id != user.user_code:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access forbidden: you are not the assigned advisor for this session",
-        )
-    return session
+    if user.role == ROLE_ADMIN:
+        return session
+    if user.role == ROLE_STUDENT:
+        if session.student_id != user.user_code:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access forbidden: you do not own this advising session",
+            )
+        return session
+    if user.role == ROLE_LECTURER:
+        if session.lecturer_id != user.user_code:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access forbidden: you are not the assigned advisor for this session",
+            )
+        return session
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access forbidden: insufficient permissions",
+    )
 
 
 # ==============================================================================
@@ -88,14 +97,29 @@ def create_or_get_session(
     db: SessionDep,
 ):
     """Initiate a new advising dialogue or return the existing one for the target course/semester."""
-    # Resolve lecturer_id and student_id based on who initiates
+    # Resolve lecturer_id and student_id with strict allowlist RBAC and teaching relationship checks
     if current_user.role == ROLE_LECTURER:
         lecturer_id = current_user.user_code
         student_id = payload.student_id
+        if not academic_class_repo.lecturer_teaches_student(
+            db, lecturer_id=lecturer_id, student_id=student_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access forbidden: lecturers can only open advising sessions with students in their classes",
+            )
     elif current_user.role == ROLE_STUDENT:
         student_id = current_user.user_code
         lecturer_id = payload.lecturer_id
-        if not lecturer_id:
+        if lecturer_id:
+            if not academic_class_repo.lecturer_teaches_student(
+                db, lecturer_id=lecturer_id, student_id=student_id
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access forbidden: students can only open advising sessions with lecturers teaching their classes",
+                )
+        else:
             # Auto-resolve lecturer from student's enrolled class in target course and semester
             enrollments = enrollment_repo.get_student_semester_courses(
                 db, student_id=student_id, semester_code=payload.semester_code
@@ -108,7 +132,7 @@ def create_or_get_session(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Cannot determine lecturer for this course enrollment. Please specify lecturer_id.",
                 )
-    else:  # Admin
+    elif current_user.role == ROLE_ADMIN:
         student_id = payload.student_id
         lecturer_id = payload.lecturer_id
         if not lecturer_id:
@@ -123,6 +147,11 @@ def create_or_get_session(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="lecturer_id is required when no matching enrollment lecturer can be resolved.",
                 )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: insufficient permissions",
+        )
 
     # Verify student exists
     if not student_repo.get_by_student_id(db, student_id):

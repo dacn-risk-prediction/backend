@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.deps import SessionDep
+from app.api.deps import CurrentUser, SessionDep
 from app.repositories import curriculum_repo, knowledge_block_repo, program_structure_repo
 from app.schemas.curriculum import (
     CurriculumDetailResponse,
@@ -19,6 +19,7 @@ router = APIRouter()
     summary="List all academic curriculums",
 )
 def list_curriculums(
+    current_user: CurrentUser,
     db: SessionDep,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
@@ -36,6 +37,7 @@ def list_curriculums(
     summary="List all knowledge blocks in curriculums",
 )
 def list_knowledge_blocks(
+    current_user: CurrentUser,
     db: SessionDep,
     category: str | None = Query(default=None, description="Filter by category (e.g. General, Core, Specialized)"),
     skip: int = Query(default=0, ge=0),
@@ -51,7 +53,7 @@ def list_knowledge_blocks(
     status_code=status.HTTP_200_OK,
     summary="Get curriculum program details by ID",
 )
-def get_curriculum(curriculum_id: str, db: SessionDep):
+def get_curriculum(curriculum_id: str, current_user: CurrentUser, db: SessionDep):
     """Retrieve specific curriculum program with its course structures and knowledge blocks."""
     curriculum = curriculum_repo.get_by_id(db, curriculum_id)
     if not curriculum:
@@ -70,16 +72,15 @@ def get_curriculum(curriculum_id: str, db: SessionDep):
 )
 def get_curriculum_structures(
     curriculum_id: str,
+    current_user: CurrentUser,
     db: SessionDep,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=200, ge=1, le=500),
 ):
     """Retrieve course layout, required credits, and recommended semesters for a curriculum."""
-    curriculum = curriculum_repo.get_by_id(db, curriculum_id)
-    if not curriculum:
+    if not curriculum_repo.exists(db, curriculum_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Curriculum '{curriculum_id}' not found",
         )
     return program_structure_repo.get_by_curriculum(db, curriculum_id=curriculum_id, skip=skip, limit=limit)
-

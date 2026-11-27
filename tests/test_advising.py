@@ -47,10 +47,28 @@ def test_student_cannot_spoof_another_student_when_creating_session(
     assert res.json()["lecturer_id"] == "GV1001"
 
 
+def _enroll_student_in_class(db_session: Session, seeded_entities: dict[str, object]) -> None:
+    """Enroll student_user into academic_class taught by lecturer_user."""
+    student_user = seeded_entities["student_user"]
+    academic_class = seeded_entities["academic_class"]
+    db_session.add(
+        Enrollment(
+            student_id=student_user.user_code,
+            class_id=academic_class.class_id,
+            course_code="CO2017",
+            semester_code="HK261",
+            status="enrolled",
+        )
+    )
+    db_session.commit()
+
+
 def test_advising_messages_unread_count_and_session_details(
     client: TestClient,
+    db_session: Session,
     seeded_entities: dict[str, object],
 ) -> None:
+    _enroll_student_in_class(db_session, seeded_entities)
     lecturer_user = seeded_entities["lecturer_user"]
     student_user = seeded_entities["student_user"]
     other_student_user = seeded_entities["other_student_user"]
@@ -124,8 +142,10 @@ def test_advising_messages_unread_count_and_session_details(
 
 def test_advising_task_and_appointment_role_permissions(
     client: TestClient,
+    db_session: Session,
     seeded_entities: dict[str, object],
 ) -> None:
+    _enroll_student_in_class(db_session, seeded_entities)
     lecturer_user = seeded_entities["lecturer_user"]
     student_user = seeded_entities["student_user"]
 
@@ -218,8 +238,10 @@ def test_advising_task_and_appointment_role_permissions(
 
 def test_advising_notifications_feed_history_and_read_all(
     client: TestClient,
+    db_session: Session,
     seeded_entities: dict[str, object],
 ) -> None:
+    _enroll_student_in_class(db_session, seeded_entities)
     lecturer_user = seeded_entities["lecturer_user"]
     student_user = seeded_entities["student_user"]
 
@@ -305,9 +327,11 @@ def test_advising_notifications_feed_history_and_read_all(
 
 def test_appointment_two_way_one_time_confirmation_workflow(
     client: TestClient,
+    db_session: Session,
     seeded_entities: dict[str, object],
 ) -> None:
     """Both directions: creator notifies recipient, only recipient confirms once, creator gets notified."""
+    _enroll_student_in_class(db_session, seeded_entities)
     lecturer_user = seeded_entities["lecturer_user"]
     student_user = seeded_entities["student_user"]
 
@@ -457,8 +481,10 @@ def test_appointment_two_way_one_time_confirmation_workflow(
 
 def test_admin_read_all_does_not_wipe_student_or_lecturer_unread(
     client: TestClient,
+    db_session: Session,
     seeded_entities: dict[str, object],
 ) -> None:
+    _enroll_student_in_class(db_session, seeded_entities)
     admin_user = seeded_entities["admin_user"]
     lecturer_user = seeded_entities["lecturer_user"]
     student_user = seeded_entities["student_user"]

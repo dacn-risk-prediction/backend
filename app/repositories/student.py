@@ -112,9 +112,13 @@ class StudentRepository:
     ) -> Student:
         """Update an existing student record."""
         if isinstance(obj_in, dict):
-            update_data = obj_in
+            update_data = dict(obj_in)
         else:
             update_data = obj_in.model_dump(exclude_unset=True)
+
+        for non_nullable in ("cohort", "major"):
+            if non_nullable in update_data and update_data[non_nullable] is None:
+                update_data.pop(non_nullable)
 
         for field, value in update_data.items():
             setattr(db_obj, field, value)

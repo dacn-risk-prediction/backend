@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.deps import SessionDep
+from app.api.deps import CurrentAdmin, CurrentUser, SessionDep
+from app.core.security import ROLE_ADMIN, ROLE_LECTURER
+from app.models.user import User
 from app.repositories import lecturer_repo
 from app.schemas.lecturer import (
     LecturerCreate,
@@ -14,13 +16,26 @@ from app.services.academic_service import academic_service
 router = APIRouter()
 
 
+def _ensure_lecturer_self_or_admin(current_user: User, lecturer_id: str) -> None:
+    """Allowlist check: Admin or the lecturer themselves."""
+    if current_user.role == ROLE_ADMIN:
+        return
+    if current_user.role == ROLE_LECTURER and lecturer_id == current_user.user_code:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access forbidden: lecturers can only access or update their own profile",
+    )
+
+
 @router.get(
     "/",
     response_model=list[LecturerResponse],
     status_code=status.HTTP_200_OK,
-    summary="List lecturers with pagination and filters",
+    summary="List lecturers with pagination and filters (Admin)",
 )
 def list_lecturers(
+    current_admin: CurrentAdmin,
     db: SessionDep,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
@@ -41,9 +56,9 @@ def list_lecturers(
     "/",
     response_model=LecturerResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new lecturer record",
+    summary="Create a new lecturer record (Admin)",
 )
-def create_lecturer(lecturer_in: LecturerCreate, db: SessionDep):
+def create_lecturer(lecturer_in: LecturerCreate, current_admin: CurrentAdmin, db: SessionDep):
     """Register a new lecturer into the system."""
     existing = lecturer_repo.get_by_lecturer_id(db, lecturer_in.lecturer_id)
     if existing:
@@ -58,10 +73,11 @@ def create_lecturer(lecturer_in: LecturerCreate, db: SessionDep):
     "/{lecturer_id}",
     response_model=LecturerDetailResponse,
     status_code=status.HTTP_200_OK,
-    summary="Get lecturer details by ID",
+    summary="Get lecturer details by ID (Admin or self)",
 )
-def get_lecturer(lecturer_id: str, db: SessionDep):
+def get_lecturer(lecturer_id: str, current_user: CurrentUser, db: SessionDep):
     """Retrieve detailed lecturer information with linked user profile."""
+    _ensure_lecturer_self_or_admin(current_user, lecturer_id)
     lecturer = lecturer_repo.get_with_user(db, lecturer_id)
     if not lecturer:
         raise HTTPException(
@@ -77,12 +93,9 @@ def get_lecturer(lecturer_id: str, db: SessionDep):
     status_code=status.HTTP_200_OK,
     summary="Get all classes taught by a lecturer in the current active semester",
 )
-def get_lecturer_current_classes(lecturer_id: str, db: SessionDep):
-    """Retrieve all classes assigned to a lecturer in the current active semester.
-
-    Handles edge cases:
-    - 404: Lecturer does not exist.
-    """
+def get_lecturer_current_classes(lecturer_id: str, current_user: CurrentUser, db: SessionDep):
+    """Retrieve all classes assigned to a lecturer in the current active semester."""
+    _ensure_lecturer_self_or_admin(current_user, lecturer_id)
     lecturer = lecturer_repo.get_by_lecturer_id(db, lecturer_id)
     if not lecturer:
         raise HTTPException(
@@ -101,34 +114,53 @@ def get_lecturer_current_classes(lecturer_id: str, db: SessionDep):
     summary="Get all classes taught by a lecturer in the current active semester (alias)",
     include_in_schema=False,
 )
-def get_lecturer_classes_current_alias(lecturer_id: str, db: SessionDep):
+def get_lecturer_classes_current_alias(
+    lecturer_id: str,
+    current_user: CurrentUser,
+    db: SessionDep,
+):
     """Alias endpoint for /{lecturer_id}/current."""
-    return get_lecturer_current_classes(lecturer_id=lecturer_id, db=db)
+    return get_lecturer_current_classes(lecturer_id=lecturer_id, current_user=current_user, db=db)
 
 
 @router.put(
     "/{lecturer_id}",
     response_model=LecturerResponse,
     status_code=status.HTTP_200_OK,
-    summary="Update lecturer information",
+    summary="Update lecturer information (Admin or self)",
 )
-def update_lecturer(lecturer_id: str, lecturer_in: LecturerUpdate, db: SessionDep):
+def update_lecturer(
+    lecturer_id: str,
+    lecturer_in: LecturerUpdate,
+    current_user: CurrentUser,
+    db: SessionDep,
+):
     """Update details of an existing lecturer."""
+    _ensure_lecturer_self_or_admin(current_user, lecturer_id)
     lecturer = lecturer_repo.get_by_lecturer_id(db, lecturer_id)
     if not lecturer:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Lecturer '{lecturer_id}' not found",
         )
-    return lecturer_repo.update(db, db_obj=lecturer, obj_in=lecturer_in)
+    update_data = lecturer_in.model_dump(exclude_unset=True)
+    # Non-admin lecturers cannot reassign user_id on their lecturer profile
+    if current_user.role != ROLE_ADMIN:
+        if "user_id" in update_data and update_data["user_id"] != lecturer.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access forbidden: only administrators can reassign a lecturer's linked user account",
+            )
+        update_data.pop("user_id", None)
+    return lecturer_repo.update(db, db_obj=lecturer, obj_in=update_data)
 
 
 @router.delete(
     "/{lecturer_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a lecturer record",
+    summary="Delete a lecturer record (Admin)",
 )
-def delete_lecturer(lecturer_id: str, db: SessionDep):
+def delete_lecturer(lecturer_id: str, current_admin: CurrentAdmin, db: SessionDep):
     """Delete a lecturer record by lecturer ID."""
     lecturer = lecturer_repo.get_by_lecturer_id(db, lecturer_id)
     if not lecturer:

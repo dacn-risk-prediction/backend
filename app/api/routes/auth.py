@@ -1,8 +1,12 @@
 import uuid
-import jwt
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from app.api.deps import SessionDep
+from app.core.rate_limit import (
+    get_client_ip,
+    login_rate_limiter,
+    refresh_rate_limiter,
+)
 from app.core.security import (
     TOKEN_TYPE_REFRESH,
     create_access_token,
@@ -13,6 +17,8 @@ from app.core.security import (
 from app.repositories import user_repo
 from app.schemas.user import Token, TokenRefreshRequest, UserLogin
 
+import jwt
+
 router = APIRouter()
 
 
@@ -22,8 +28,10 @@ router = APIRouter()
     status_code=status.HTTP_200_OK,
     summary="User login with email and password",
 )
-def login(login_in: UserLogin, db: SessionDep):
+def login(login_in: UserLogin, request: Request, db: SessionDep):
     """Authenticate user credentials and issue a short-lived access token + long-lived refresh token."""
+    login_rate_limiter.check(get_client_ip(request))
+
     user = user_repo.get_by_email(db, login_in.email)
     if not user or not verify_password(login_in.password, user.password_hash):
         raise HTTPException(
@@ -48,8 +56,10 @@ def login(login_in: UserLogin, db: SessionDep):
     status_code=status.HTTP_200_OK,
     summary="Rotate tokens using a valid refresh token",
 )
-def refresh_token(refresh_in: TokenRefreshRequest, db: SessionDep):
+def refresh_token(refresh_in: TokenRefreshRequest, request: Request, db: SessionDep):
     """Validate refresh token and issue a fresh pair of access and refresh tokens."""
+    refresh_rate_limiter.check(get_client_ip(request))
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate refresh token",
@@ -78,7 +88,7 @@ def refresh_token(refresh_in: TokenRefreshRequest, db: SessionDep):
     except (ValueError, TypeError):
         raise credentials_exception
 
-    # Verify user still exists and is active in the database
+    # Verify user still exists in the database
     user = user_repo.get_by_id(db, user_uuid)
     if not user:
         raise HTTPException(
