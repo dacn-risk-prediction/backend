@@ -4,6 +4,7 @@ Overrides FastAPI's `get_db` dependency so tests never touch Neon PostgreSQL.
 """
 
 from collections.abc import Generator
+from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,7 +12,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.deps import get_db
+from app.api.deps import get_db, get_db_session_factory
+from app.core.rate_limit import reset_all_rate_limiters
 from app.core.security import (
     ROLE_ADMIN,
     ROLE_LECTURER,
@@ -49,6 +51,14 @@ def db_session() -> Generator[Session, None, None]:
         engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters() -> Generator[None, None, None]:
+    """Ensure rate limiter state is isolated across tests."""
+    reset_all_rate_limiters()
+    yield
+    reset_all_rate_limiters()
+
+
 @pytest.fixture()
 def client(db_session: Session) -> Generator[TestClient, None, None]:
     """Return a FastAPI TestClient bound to the isolated in-memory DB session."""
@@ -56,7 +66,12 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     def _override_get_db() -> Generator[Session, None, None]:
         yield db_session
 
+    @contextmanager
+    def _override_session_factory() -> Generator[Session, None, None]:
+        yield db_session
+
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_db_session_factory] = lambda: _override_session_factory
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

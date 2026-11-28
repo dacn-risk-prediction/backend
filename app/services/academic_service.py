@@ -114,9 +114,7 @@ class AcademicService:
             - is_graduated: whether student passed graduation thesis (CO4337)
             - semester_gpas: list of per-semester GPA performance records
         """
-        summary = enrollment_repo.get_academic_summary(db, student_id=student_id)
-        summary["semester_gpas"] = enrollment_repo.get_semester_gpa_history(db, student_id=student_id)
-        return summary
+        return enrollment_repo.get_full_academic_summary(db, student_id=student_id)
 
     @staticmethod
     def is_student_graduated(

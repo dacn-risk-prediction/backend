@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.deps import SessionDep
+from app.api.deps import CurrentAdmin, CurrentUser, SessionDep
 from app.repositories import academic_class_repo
 from app.schemas.academic_class import (
     AcademicClassCreate,
@@ -19,6 +19,7 @@ router = APIRouter()
     summary="List classes with pagination and filters",
 )
 def list_classes(
+    current_user: CurrentUser,
     db: SessionDep,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
@@ -43,9 +44,13 @@ def list_classes(
     "/",
     response_model=AcademicClassResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new academic class",
+    summary="Create a new academic class (Admin)",
 )
-def create_class(class_in: AcademicClassCreate, db: SessionDep):
+def create_class(
+    class_in: AcademicClassCreate,
+    current_admin: CurrentAdmin,
+    db: SessionDep,
+):
     """Register a new class into the system."""
     existing = academic_class_repo.get_by_id(db, class_in.class_id)
     if existing:
@@ -62,7 +67,7 @@ def create_class(class_in: AcademicClassCreate, db: SessionDep):
     status_code=status.HTTP_200_OK,
     summary="Get class details with course, semester, and lecturer",
 )
-def get_class(class_id: str, db: SessionDep):
+def get_class(class_id: str, current_user: CurrentUser, db: SessionDep):
     """Retrieve a class by ID including detailed relationships."""
     cls = academic_class_repo.get_with_details(db, class_id)
     if not cls:
@@ -77,9 +82,14 @@ def get_class(class_id: str, db: SessionDep):
     "/{class_id}",
     response_model=AcademicClassResponse,
     status_code=status.HTTP_200_OK,
-    summary="Update class information",
+    summary="Update class information (Admin)",
 )
-def update_class(class_id: str, class_in: AcademicClassUpdate, db: SessionDep):
+def update_class(
+    class_id: str,
+    class_in: AcademicClassUpdate,
+    current_admin: CurrentAdmin,
+    db: SessionDep,
+):
     """Update details of an existing class."""
     cls = academic_class_repo.get_by_id(db, class_id)
     if not cls:
@@ -93,9 +103,9 @@ def update_class(class_id: str, class_in: AcademicClassUpdate, db: SessionDep):
 @router.delete(
     "/{class_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a class",
+    summary="Delete a class (Admin)",
 )
-def delete_class(class_id: str, db: SessionDep):
+def delete_class(class_id: str, current_admin: CurrentAdmin, db: SessionDep):
     """Delete a class by its unique ID."""
     cls = academic_class_repo.get_by_id(db, class_id)
     if not cls:

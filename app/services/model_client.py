@@ -1,8 +1,8 @@
 """HTTP client for communicating with the external AI/ML Model Service.
 
 Adheres strictly to .agent/rules/fastapi-backend.md (Rule 1 & Rule 6):
-- Uses async def and httpx.AsyncClient for non-blocking network calls.
-- Enforces explicit timeouts and standard 503 Service Unavailable handling on failures.
+- Uses async def and a shared pooled httpx.AsyncClient for non-blocking network calls.
+- Enforces explicit per-request timeouts and standard 503 Service Unavailable handling on failures.
 """
 
 from typing import Any
@@ -14,10 +14,25 @@ from app.core.config import settings
 
 
 class ModelServiceClient:
-    """Async client managing HTTP communication with the ML Inference Service (serve.py)."""
+    """Async client managing pooled HTTP communication with the ML Inference Service (serve.py)."""
 
     def __init__(self, base_url: str | None = None):
         self.base_url = (base_url or settings.MODEL_SERVICE_URL).rstrip("/")
+        self._client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Return or lazily initialize a shared connection-pooled httpx.AsyncClient."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        """Close the shared HTTP connection pool gracefully on shutdown."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+        self._client = None
 
     @staticmethod
     def _safe_extract_detail(res: httpx.Response, fallback: str) -> str:
@@ -40,17 +55,17 @@ class ModelServiceClient:
     ) -> dict[str, Any]:
         """Execute POST request against Model Service with uniform error mapping."""
         url = f"{self.base_url}{path}"
+        client = self._get_client()
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                res = await client.post(url, json=payload)
-                if res.status_code == status.HTTP_404_NOT_FOUND:
-                    detail = self._safe_extract_detail(res, not_found_detail)
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
-                if res.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
-                    detail = self._safe_extract_detail(res, "Models not yet loaded into memory.")
-                    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
-                res.raise_for_status()
-                return res.json()
+            res = await client.post(url, json=payload, timeout=timeout)
+            if res.status_code == status.HTTP_404_NOT_FOUND:
+                detail = self._safe_extract_detail(res, not_found_detail)
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+            if res.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
+                detail = self._safe_extract_detail(res, "Models not yet loaded into memory.")
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
+            res.raise_for_status()
+            return res.json()
         except HTTPException:
             raise
         except httpx.HTTPStatusError as e:
@@ -71,11 +86,11 @@ class ModelServiceClient:
     async def check_health(self) -> dict[str, Any]:
         """Query the Model Service /health endpoint."""
         url = f"{self.base_url}/health"
+        client = self._get_client()
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                res = await client.get(url)
-                res.raise_for_status()
-                return res.json()
+            res = await client.get(url, timeout=5.0)
+            res.raise_for_status()
+            return res.json()
         except httpx.HTTPStatusError as e:
             detail = self._safe_extract_detail(
                 e.response,

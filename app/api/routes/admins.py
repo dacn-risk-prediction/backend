@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.deps import SessionDep
+from app.api.deps import CurrentAdmin, SessionDep
 from app.repositories import admin_repo, semester_repo
 from app.schemas.admin import (
     AdminCreate,
@@ -19,7 +19,7 @@ router = APIRouter()
     status_code=status.HTTP_200_OK,
     summary="Get exact system-wide entity counts for Admin Dashboard",
 )
-def get_admin_system_stats(db: SessionDep):
+def get_admin_system_stats(current_admin: CurrentAdmin, db: SessionDep):
     """Return exact SQL COUNT(*) totals across core entities without pagination truncation."""
     active_sem = semester_repo.get_active_semester(db)
     active_code = active_sem.semester_code if active_sem else None
@@ -33,6 +33,7 @@ def get_admin_system_stats(db: SessionDep):
     summary="List administrators with pagination and filters",
 )
 def list_admins(
+    current_admin: CurrentAdmin,
     db: SessionDep,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
@@ -55,7 +56,7 @@ def list_admins(
     status_code=status.HTTP_201_CREATED,
     summary="Create a new administrator record",
 )
-def create_admin(admin_in: AdminCreate, db: SessionDep):
+def create_admin(admin_in: AdminCreate, current_admin: CurrentAdmin, db: SessionDep):
     """Register a new administrator profile."""
     existing = admin_repo.get_by_admin_id(db, admin_in.admin_id)
     if existing:
@@ -72,7 +73,7 @@ def create_admin(admin_in: AdminCreate, db: SessionDep):
     status_code=status.HTTP_200_OK,
     summary="Get administrator details by admin ID",
 )
-def get_admin(admin_id: str, db: SessionDep):
+def get_admin(admin_id: str, current_admin: CurrentAdmin, db: SessionDep):
     """Retrieve detailed administrator profile including linked user account."""
     admin = admin_repo.get_by_admin_id(db, admin_id)
     if not admin:
@@ -89,7 +90,12 @@ def get_admin(admin_id: str, db: SessionDep):
     status_code=status.HTTP_200_OK,
     summary="Update administrator information",
 )
-def update_admin(admin_id: str, admin_in: AdminUpdate, db: SessionDep):
+def update_admin(
+    admin_id: str,
+    admin_in: AdminUpdate,
+    current_admin: CurrentAdmin,
+    db: SessionDep,
+):
     """Update details of an existing administrator profile."""
     admin = admin_repo.get_by_admin_id(db, admin_id)
     if not admin:
@@ -105,13 +111,18 @@ def update_admin(admin_id: str, admin_in: AdminUpdate, db: SessionDep):
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete an administrator record",
 )
-def delete_admin(admin_id: str, db: SessionDep):
+def delete_admin(admin_id: str, current_admin: CurrentAdmin, db: SessionDep):
     """Delete an administrator record by admin ID."""
     admin = admin_repo.get_by_admin_id(db, admin_id)
     if not admin:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Admin '{admin_id}' not found",
+        )
+    if admin.admin_id == current_admin.user_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Administrators cannot delete their own admin profile",
         )
     admin_repo.remove(db, admin_id=admin_id)
     return None

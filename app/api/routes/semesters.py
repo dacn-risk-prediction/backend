@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.deps import SessionDep
+from app.api.deps import CurrentAdmin, CurrentUser, SessionDep
 from app.repositories import semester_repo
 from app.schemas.semester import (
     SemesterCreate,
@@ -18,6 +18,7 @@ router = APIRouter()
     summary="List semesters with pagination",
 )
 def list_semesters(
+    current_user: CurrentUser,
     db: SessionDep,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
@@ -38,9 +39,13 @@ def list_semesters(
     "/",
     response_model=SemesterResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new semester",
+    summary="Create a new semester (Admin)",
 )
-def create_semester(semester_in: SemesterCreate, db: SessionDep):
+def create_semester(
+    semester_in: SemesterCreate,
+    current_admin: CurrentAdmin,
+    db: SessionDep,
+):
     """Register a new semester into the system."""
     existing = semester_repo.get_by_code(db, semester_in.semester_code)
     if existing:
@@ -57,7 +62,7 @@ def create_semester(semester_in: SemesterCreate, db: SessionDep):
     status_code=status.HTTP_200_OK,
     summary="Get current active semester",
 )
-def get_active_semester(db: SessionDep):
+def get_active_semester(current_user: CurrentUser, db: SessionDep):
     """Retrieve the currently active academic semester."""
     semester = semester_repo.get_active_semester(db)
     if not semester:
@@ -74,7 +79,7 @@ def get_active_semester(db: SessionDep):
     status_code=status.HTTP_200_OK,
     summary="Get semester details by code",
 )
-def get_semester(semester_code: str, db: SessionDep):
+def get_semester(semester_code: str, current_user: CurrentUser, db: SessionDep):
     """Retrieve a semester by its code."""
     semester = semester_repo.get_by_code(db, semester_code)
     if not semester:
@@ -89,9 +94,14 @@ def get_semester(semester_code: str, db: SessionDep):
     "/{semester_code}",
     response_model=SemesterResponse,
     status_code=status.HTTP_200_OK,
-    summary="Update semester information",
+    summary="Update semester information (Admin)",
 )
-def update_semester(semester_code: str, semester_in: SemesterUpdate, db: SessionDep):
+def update_semester(
+    semester_code: str,
+    semester_in: SemesterUpdate,
+    current_admin: CurrentAdmin,
+    db: SessionDep,
+):
     """Update details of an existing semester."""
     semester = semester_repo.get_by_code(db, semester_code)
     if not semester:
@@ -105,9 +115,13 @@ def update_semester(semester_code: str, semester_in: SemesterUpdate, db: Session
 @router.delete(
     "/{semester_code}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a semester",
+    summary="Delete a semester (Admin)",
 )
-def delete_semester(semester_code: str, db: SessionDep):
+def delete_semester(
+    semester_code: str,
+    current_admin: CurrentAdmin,
+    db: SessionDep,
+):
     """Delete a semester by semester code."""
     semester = semester_repo.get_by_code(db, semester_code)
     if not semester:

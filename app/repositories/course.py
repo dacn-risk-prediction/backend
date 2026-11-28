@@ -19,6 +19,14 @@ class CourseRepository:
         statement = select(Course).where(Course.course_code == course_code)
         return db.scalar(statement)
 
+    def get_by_codes(self, db: Session, course_codes: list[str]) -> dict[str, Course]:
+        """Batch-fetch courses by code list to prevent N+1 lookups."""
+        unique_codes = list({c for c in course_codes if c})
+        if not unique_codes:
+            return {}
+        statement = select(Course).where(Course.course_code.in_(unique_codes))
+        return {course.course_code: course for course in db.scalars(statement).all()}
+
     def get_with_prerequisites(self, db: Session, course_code: str) -> Course | None:
         """Fetch a course eagerly loading its prerequisite relationships to avoid N+1 queries."""
         statement = (
@@ -95,6 +103,8 @@ class CourseRepository:
             update_data = obj_in.model_dump(exclude_unset=True)
 
         for field, value in update_data.items():
+            if field in {"course_name", "credits"} and value is None:
+                continue
             setattr(db_obj, field, value)
 
         db.add(db_obj)

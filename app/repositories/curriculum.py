@@ -16,6 +16,13 @@ from app.schemas.curriculum import (
 class CurriculumRepository:
     """Repository handling database operations for Curriculum entity."""
 
+    def exists(self, db: Session, curriculum_id: str) -> bool:
+        """Lightweight existence check without eager-loading program structures."""
+        statement = select(Curriculum.curriculum_id).where(
+            Curriculum.curriculum_id == curriculum_id
+        )
+        return db.scalar(statement) is not None
+
     def get_by_id(self, db: Session, curriculum_id: str) -> Curriculum | None:
         """Fetch curriculum by primary key identifier."""
         statement = (

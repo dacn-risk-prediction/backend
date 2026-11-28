@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.deps import SessionDep
+from app.api.deps import CurrentAdmin, CurrentUser, SessionDep
 from app.repositories import course_assessment_repo, course_repo
 from app.schemas.course import (
     CourseCreate,
@@ -22,6 +22,7 @@ router = APIRouter()
     summary="List courses with pagination and search",
 )
 def list_courses(
+    current_user: CurrentUser,
     db: SessionDep,
     skip: int = Query(default=0, ge=0, description="Offset records"),
     limit: int = Query(default=100, ge=1, le=500, description="Limit records"),
@@ -35,9 +36,13 @@ def list_courses(
     "/",
     response_model=CourseResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new course",
+    summary="Create a new course (Admin)",
 )
-def create_course(course_in: CourseCreate, db: SessionDep):
+def create_course(
+    course_in: CourseCreate,
+    current_admin: CurrentAdmin,
+    db: SessionDep,
+):
     """Register a new course into the system."""
     existing = course_repo.get_by_code(db, course_in.course_code)
     if existing:
@@ -54,7 +59,7 @@ def create_course(course_in: CourseCreate, db: SessionDep):
     status_code=status.HTTP_200_OK,
     summary="Get course details with prerequisites",
 )
-def get_course(course_code: str, db: SessionDep):
+def get_course(course_code: str, current_user: CurrentUser, db: SessionDep):
     """Retrieve a course by its code, including prerequisite requirements."""
     course = course_repo.get_with_prerequisites(db, course_code)
     if not course:
@@ -69,9 +74,14 @@ def get_course(course_code: str, db: SessionDep):
     "/{course_code}",
     response_model=CourseResponse,
     status_code=status.HTTP_200_OK,
-    summary="Update a course",
+    summary="Update a course (Admin)",
 )
-def update_course(course_code: str, course_in: CourseUpdate, db: SessionDep):
+def update_course(
+    course_code: str,
+    course_in: CourseUpdate,
+    current_admin: CurrentAdmin,
+    db: SessionDep,
+):
     """Update details of an existing course."""
     course = course_repo.get_by_code(db, course_code)
     if not course:
@@ -85,9 +95,9 @@ def update_course(course_code: str, course_in: CourseUpdate, db: SessionDep):
 @router.delete(
     "/{course_code}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a course",
+    summary="Delete a course (Admin)",
 )
-def delete_course(course_code: str, db: SessionDep):
+def delete_course(course_code: str, current_admin: CurrentAdmin, db: SessionDep):
     """Delete a course by its unique code."""
     course = course_repo.get_by_code(db, course_code)
     if not course:
@@ -103,11 +113,12 @@ def delete_course(course_code: str, db: SessionDep):
     "/{course_code}/prerequisites",
     response_model=CoursePrerequisiteResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Add a prerequisite requirement to a course",
+    summary="Add a prerequisite requirement to a course (Admin)",
 )
 def add_prerequisite(
     course_code: str,
     prereq_in: CoursePrerequisiteCreate,
+    current_admin: CurrentAdmin,
     db: SessionDep,
 ):
     """Link a prerequisite relationship to a course."""
@@ -146,7 +157,7 @@ def add_prerequisite(
     status_code=status.HTTP_200_OK,
     summary="Get assessment weights breakdown for a course",
 )
-def get_course_assessment(course_code: str, db: SessionDep):
+def get_course_assessment(course_code: str, current_user: CurrentUser, db: SessionDep):
     """Retrieve score component weights (quiz, lab, btl, midterm, final) for a course."""
     assessment = course_assessment_repo.get_by_course_code(db, course_code)
     if not assessment:
@@ -160,9 +171,13 @@ def get_course_assessment(course_code: str, db: SessionDep):
 @router.delete(
     "/prerequisites/{prerequisite_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a prerequisite relationship",
+    summary="Delete a prerequisite relationship (Admin)",
 )
-def delete_prerequisite(prerequisite_id: int, db: SessionDep):
+def delete_prerequisite(
+    prerequisite_id: int,
+    current_admin: CurrentAdmin,
+    db: SessionDep,
+):
     """Delete a prerequisite rule by its ID."""
     success = course_repo.remove_prerequisite(db, prerequisite_id=prerequisite_id)
     if not success:

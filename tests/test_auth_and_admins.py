@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.api.deps import get_current_admin
 from app.core.exceptions import EntityNotFoundError
 from app.main import app
+from tests.conftest import auth_headers
 
 
 def test_login_refresh_and_token_confusion_prevention(
@@ -74,10 +75,12 @@ def test_admin_crud_endpoints(
     seeded_entities: dict[str, object],
 ) -> None:
     admin_user = seeded_entities["admin_user"]
+    headers = auth_headers(admin_user)
 
-    # Create
+    # Create own admin profile
     create_res = client.post(
         "/api/v1/admins/",
+        headers=headers,
         json={
             "admin_id": admin_user.user_code,
             "department": "Phong Dao Tao",
@@ -90,32 +93,60 @@ def test_admin_crud_endpoints(
     # Duplicate returns 409
     dup_res = client.post(
         "/api/v1/admins/",
+        headers=headers,
         json={"admin_id": admin_user.user_code, "department": "Phong Dao Tao"},
     )
     assert dup_res.status_code == status.HTTP_409_CONFLICT
 
     # Detail includes nested user
-    get_res = client.get(f"/api/v1/admins/{admin_user.user_code}")
+    get_res = client.get(f"/api/v1/admins/{admin_user.user_code}", headers=headers)
     assert get_res.status_code == status.HTTP_200_OK
     assert get_res.json()["user"]["email"] == "admin1@hcmut.edu.vn"
 
     # Update
     upd_res = client.put(
         f"/api/v1/admins/{admin_user.user_code}",
+        headers=headers,
         json={"department": "Phong Cong Tac Sinh Vien"},
     )
     assert upd_res.status_code == status.HTTP_200_OK
     assert upd_res.json()["department"] == "Phong Cong Tac Sinh Vien"
 
     # List with filter
-    list_res = client.get("/api/v1/admins/", params={"department": "Cong Tac"})
+    list_res = client.get("/api/v1/admins/", headers=headers, params={"department": "Cong Tac"})
     assert list_res.status_code == status.HTTP_200_OK
     assert len(list_res.json()) == 1
 
-    # Delete
-    del_res = client.delete(f"/api/v1/admins/{admin_user.user_code}")
+    # Self-delete is blocked with 400
+    self_del_res = client.delete(f"/api/v1/admins/{admin_user.user_code}", headers=headers)
+    assert self_del_res.status_code == status.HTTP_400_BAD_REQUEST
+
+    # Create and delete another admin profile succeeds
+    other_user_res = client.post(
+        "/api/v1/users/",
+        headers=headers,
+        json={
+            "user_code": "AD002",
+            "name": "Admin Two",
+            "email": "admin2@hcmut.edu.vn",
+            "role": "admin",
+            "password": "Password123!",
+        },
+    )
+    assert other_user_res.status_code == status.HTTP_201_CREATED
+    other_admin_create = client.post(
+        "/api/v1/admins/",
+        headers=headers,
+        json={
+            "admin_id": "AD002",
+            "department": "Phong Khao Thi",
+            "user_id": other_user_res.json()["id"],
+        },
+    )
+    assert other_admin_create.status_code == status.HTTP_201_CREATED
+    del_res = client.delete("/api/v1/admins/AD002", headers=headers)
     assert del_res.status_code == status.HTTP_204_NO_CONTENT
-    assert client.get(f"/api/v1/admins/{admin_user.user_code}").status_code == status.HTTP_404_NOT_FOUND
+    assert client.get("/api/v1/admins/AD002", headers=headers).status_code == status.HTTP_404_NOT_FOUND
 
 
 def test_global_app_exception_handler(client: TestClient) -> None:
@@ -149,6 +180,7 @@ def test_long_password_does_not_crash_and_case_insensitive_email(
     # Creating user with >72-byte password returns 422 cleanly
     res_create_long = client.post(
         "/api/v1/users/",
+        headers=auth_headers(seeded_entities["admin_user"]),
         json={
             "user_code": "2699001",
             "name": "Long Pass User",
@@ -164,8 +196,10 @@ def test_admin_system_stats_and_atomic_active_semester(
     client: TestClient,
     seeded_entities: dict[str, object],
 ) -> None:
+    headers = auth_headers(seeded_entities["admin_user"])
+
     # Stats endpoint returns exact SQL counts
-    stats_res = client.get("/api/v1/admins/stats")
+    stats_res = client.get("/api/v1/admins/stats", headers=headers)
     assert stats_res.status_code == status.HTTP_200_OK
     stats = stats_res.json()
     assert stats["students_count"] >= 2
@@ -176,6 +210,7 @@ def test_admin_system_stats_and_atomic_active_semester(
     # Creating a new active semester atomically deactivates HK261
     create_sem = client.post(
         "/api/v1/semesters/",
+        headers=headers,
         json={
             "semester_code": "HK262",
             "academic_year": "2026-2027",
@@ -185,13 +220,13 @@ def test_admin_system_stats_and_atomic_active_semester(
     )
     assert create_sem.status_code == status.HTTP_201_CREATED
 
-    all_sems = client.get("/api/v1/semesters/").json()
+    all_sems = client.get("/api/v1/semesters/", headers=headers).json()
     active_sems = [s for s in all_sems if s["is_active"]]
     assert [s["semester_code"] for s in active_sems] == ["HK262"]
 
     # Switching back via PUT atomically deactivates HK262
-    switch_back = client.put("/api/v1/semesters/HK261", json={"is_active": True})
+    switch_back = client.put("/api/v1/semesters/HK261", headers=headers, json={"is_active": True})
     assert switch_back.status_code == status.HTTP_200_OK
-    all_sems_after = client.get("/api/v1/semesters/").json()
+    all_sems_after = client.get("/api/v1/semesters/", headers=headers).json()
     active_after = [s for s in all_sems_after if s["is_active"]]
     assert [s["semester_code"] for s in active_after] == ["HK261"]

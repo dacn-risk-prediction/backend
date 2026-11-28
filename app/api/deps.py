@@ -1,5 +1,6 @@
 import uuid
-from collections.abc import Generator
+from collections.abc import Callable, Generator
+from contextlib import AbstractContextManager, contextmanager
 from typing import Annotated
 
 import jwt
@@ -33,7 +34,26 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+@contextmanager
+def _default_db_session_context() -> Generator[Session, None, None]:
+    """Short-lived DB session context for async endpoints that must release connections during HTTP I/O."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_db_session_factory() -> Callable[[], AbstractContextManager[Session]]:
+    """Provide a short-lived DB session context factory (overridable in tests)."""
+    return _default_db_session_context
+
+
 SessionDep = Annotated[Session, Depends(get_db)]
+SessionFactoryDep = Annotated[
+    Callable[[], AbstractContextManager[Session]],
+    Depends(get_db_session_factory),
+]
 TokenDep = Annotated[str, Depends(reusable_oauth2)]
 
 

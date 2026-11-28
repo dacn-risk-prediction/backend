@@ -196,7 +196,10 @@ class AdvisingRepository:
             statement = statement.where(AdvisingSession.student_id == user_code)
         elif role == ROLE_LECTURER:
             statement = statement.where(AdvisingSession.lecturer_id == user_code)
-        # If admin, view all sessions
+        elif role == ROLE_ADMIN:
+            pass
+        else:
+            return []
 
         sessions = list(db.scalars(statement).all())
         if not sessions:
@@ -219,18 +222,30 @@ class AdvisingRepository:
         )
         unread_map = dict(db.execute(unread_stmt).all())
 
-        # Retrieve last message for each session
-        # Query messages with row_number or latest per session
-        last_msgs_stmt = (
-            select(AdvisingMessage)
+        # Retrieve only the single latest message per session via ROW_NUMBER() window function
+        ranked_msgs_subq = (
+            select(
+                AdvisingMessage.id.label("msg_id"),
+                func.row_number()
+                .over(
+                    partition_by=AdvisingMessage.session_id,
+                    order_by=(desc(AdvisingMessage.created_at), desc(AdvisingMessage.id)),
+                )
+                .label("rn"),
+            )
             .where(AdvisingMessage.session_id.in_(session_ids))
-            .order_by(AdvisingMessage.session_id, desc(AdvisingMessage.created_at))
+            .subquery()
         )
-        all_msgs = list(db.scalars(last_msgs_stmt).all())
-        last_msg_map: dict[uuid.UUID, AdvisingMessage] = {}
-        for msg in all_msgs:
-            if msg.session_id not in last_msg_map:
-                last_msg_map[msg.session_id] = msg
+        last_msgs_stmt = select(AdvisingMessage).join(
+            ranked_msgs_subq,
+            and_(
+                AdvisingMessage.id == ranked_msgs_subq.c.msg_id,
+                ranked_msgs_subq.c.rn == 1,
+            ),
+        )
+        last_msg_map: dict[uuid.UUID, AdvisingMessage] = {
+            msg.session_id: msg for msg in db.scalars(last_msgs_stmt).all()
+        }
 
         results: list[AdvisingSessionResponse] = []
         for s in sessions:
@@ -412,6 +427,17 @@ class AdvisingRepository:
             base_filter.append(AdvisingSession.student_id == user_code)
         elif role == ROLE_LECTURER:
             base_filter.append(AdvisingSession.lecturer_id == user_code)
+        elif role == ROLE_ADMIN:
+            pass
+        else:
+            return AdvisingNotificationListResponse(
+                items=[],
+                total=0,
+                unread_count=0,
+                received_count=0,
+                sent_count=0,
+                has_more=False,
+            )
 
         # Summary counters across all scoped messages
         counts_stmt = (

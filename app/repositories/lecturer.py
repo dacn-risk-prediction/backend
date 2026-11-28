@@ -99,9 +99,12 @@ class LecturerRepository:
     ) -> Lecturer:
         """Update an existing lecturer."""
         if isinstance(obj_in, dict):
-            update_data = obj_in
+            update_data = dict(obj_in)
         else:
             update_data = obj_in.model_dump(exclude_unset=True)
+
+        if "departments" in update_data and update_data["departments"] is None:
+            update_data.pop("departments")
 
         for field, value in update_data.items():
             setattr(db_obj, field, value)

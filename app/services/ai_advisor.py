@@ -4,6 +4,8 @@ import hashlib
 import json
 import logging
 import threading
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -17,6 +19,26 @@ from app.repositories import ai_advice_cache_repo
 logger = logging.getLogger(__name__)
 
 GEMINI_INTERACTIONS_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
+
+_gemini_http_client: httpx.AsyncClient | None = None
+
+
+def _get_gemini_client() -> httpx.AsyncClient:
+    """Return or lazily initialize a pooled httpx.AsyncClient for Gemini API calls."""
+    global _gemini_http_client
+    if _gemini_http_client is None or _gemini_http_client.is_closed:
+        _gemini_http_client = httpx.AsyncClient(
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=30),
+        )
+    return _gemini_http_client
+
+
+async def close_gemini_client() -> None:
+    """Gracefully close the pooled Gemini httpx.AsyncClient on application shutdown."""
+    global _gemini_http_client
+    if _gemini_http_client is not None and not _gemini_http_client.is_closed:
+        await _gemini_http_client.aclose()
+    _gemini_http_client = None
 
 
 def _extract_gemini_text(data: Any) -> str | None:
@@ -209,48 +231,54 @@ async def call_gemini_api(anonymized_payload: dict[str, Any]) -> str | None:
         },
     }
 
-    async with httpx.AsyncClient(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
-        for attempt, api_key in enumerate(rotated_keys, start=1):
-            headers = {
-                "Content-Type": "application/json",
-                "x-goog-api-key": api_key,
-            }
-            try:
-                res = await client.post(
-                    GEMINI_INTERACTIONS_URL,
-                    json=prompt_body,
-                    headers=headers,
-                )
-                if res.status_code != 200:
-                    logger.warning(
-                        "Gemini Interactions API key attempt %s/%s returned HTTP %s; rotating.",
-                        attempt,
-                        len(rotated_keys),
-                        res.status_code,
-                    )
-                    continue
-                text = _extract_gemini_text(res.json())
-                if text:
-                    return text
-            except (httpx.RequestError, httpx.TimeoutException, ValueError, KeyError, TypeError) as exc:
+    client = _get_gemini_client()
+    for attempt, api_key in enumerate(rotated_keys, start=1):
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        }
+        try:
+            res = await client.post(
+                GEMINI_INTERACTIONS_URL,
+                json=prompt_body,
+                headers=headers,
+                timeout=settings.GEMINI_TIMEOUT_SECONDS,
+            )
+            if res.status_code != 200:
                 logger.warning(
-                    "Gemini Interactions API key attempt %s/%s failed (%s); rotating.",
+                    "Gemini Interactions API key attempt %s/%s returned HTTP %s; rotating.",
                     attempt,
                     len(rotated_keys),
-                    type(exc).__name__,
+                    res.status_code,
                 )
                 continue
+            text = _extract_gemini_text(res.json())
+            if text:
+                return text
+        except (httpx.RequestError, httpx.TimeoutException, ValueError, KeyError, TypeError) as exc:
+            logger.warning(
+                "Gemini Interactions API key attempt %s/%s failed (%s); rotating.",
+                attempt,
+                len(rotated_keys),
+                type(exc).__name__,
+            )
+            continue
 
     return None
 
 
 async def generate_grounded_advice(
-    db: Session,
+    db: Session | None,
     cf_result: dict[str, Any],
     *,
     force_refresh: bool = False,
+    db_session_factory: Callable[[], AbstractContextManager[Session]] | None = None,
 ) -> dict[str, Any]:
-    """Resolve advice via DB cache, anonymized Gemini call, or deterministic fallback."""
+    """Resolve advice via DB cache, anonymized Gemini call, or deterministic fallback.
+
+    When db_session_factory is provided, short-lived DB sessions are opened only around
+    cache reads/writes so no PostgreSQL connection is held during external Gemini HTTP I/O.
+    """
     recommendations = cf_result.get("recommendations") or []
     primary_scenario = (
         recommendations[0].get("scenario_code") if recommendations else None
@@ -258,24 +286,38 @@ async def generate_grounded_advice(
     input_hash = compute_advice_input_hash(cf_result)
     now = datetime.now(timezone.utc)
 
+    def _session_scope() -> AbstractContextManager[Session]:
+        if db_session_factory is not None:
+            return db_session_factory()
+        if db is not None:
+            return nullcontext(db)
+        raise RuntimeError("Either db or db_session_factory must be provided")
+
+    def _read_cache() -> dict[str, Any] | None:
+        with _session_scope() as session:
+            cached = ai_advice_cache_repo.get_valid_by_hash(session, input_hash, now=now)
+            if not cached:
+                return None
+            return {
+                "scenario_code": cached.scenario_code,
+                "advice_markdown": cached.advice_markdown,
+                "model_name": cached.model_name,
+                "cached_at": cached.created_at,
+            }
+
     if not force_refresh:
-        cached = await run_in_threadpool(
-            ai_advice_cache_repo.get_valid_by_hash,
-            db,
-            input_hash,
-            now=now,
-        )
-        if cached:
+        cached_data = await run_in_threadpool(_read_cache)
+        if cached_data:
             return {
                 "course_code": cf_result.get("course_code"),
                 "course_name": cf_result.get("course_name"),
                 "semester_code": cf_result.get("semester_code"),
                 "target_goal": cf_result.get("target_goal"),
-                "scenario_code": cached.scenario_code,
-                "advice_markdown": cached.advice_markdown,
+                "scenario_code": cached_data["scenario_code"],
+                "advice_markdown": cached_data["advice_markdown"],
                 "source": "cache",
-                "model_name": cached.model_name,
-                "cached_at": cached.created_at,
+                "model_name": cached_data["model_name"],
+                "cached_at": cached_data["cached_at"],
             }
 
     anonymized_payload = build_anonymized_prompt_payload(cf_result)
@@ -283,29 +325,37 @@ async def generate_grounded_advice(
 
     if advice_text:
         expires_at = now + timedelta(days=settings.AI_ADVICE_CACHE_TTL_DAYS)
-        saved = await run_in_threadpool(
-            ai_advice_cache_repo.upsert,
-            db,
-            input_hash=input_hash,
-            student_id=str(cf_result.get("student_id")),
-            course_code=str(cf_result.get("course_code")),
-            semester_code=str(cf_result.get("semester_code")),
-            scenario_code=primary_scenario,
-            advice_markdown=advice_text,
-            model_name=settings.GEMINI_MODEL,
-            expires_at=expires_at,
-            now=now,
-        )
+
+        def _write_cache() -> dict[str, Any]:
+            with _session_scope() as session:
+                saved = ai_advice_cache_repo.upsert(
+                    session,
+                    input_hash=input_hash,
+                    student_id=str(cf_result.get("student_id")),
+                    course_code=str(cf_result.get("course_code")),
+                    semester_code=str(cf_result.get("semester_code")),
+                    scenario_code=primary_scenario,
+                    advice_markdown=advice_text,
+                    model_name=settings.GEMINI_MODEL,
+                    expires_at=expires_at,
+                    now=now,
+                )
+                return {
+                    "advice_markdown": saved.advice_markdown,
+                    "cached_at": saved.created_at,
+                }
+
+        saved_data = await run_in_threadpool(_write_cache)
         return {
             "course_code": cf_result.get("course_code"),
             "course_name": cf_result.get("course_name"),
             "semester_code": cf_result.get("semester_code"),
             "target_goal": cf_result.get("target_goal"),
             "scenario_code": primary_scenario,
-            "advice_markdown": saved.advice_markdown,
+            "advice_markdown": saved_data["advice_markdown"],
             "source": "gemini",
             "model_name": settings.GEMINI_MODEL,
-            "cached_at": saved.created_at,
+            "cached_at": saved_data["cached_at"],
         }
 
     return {

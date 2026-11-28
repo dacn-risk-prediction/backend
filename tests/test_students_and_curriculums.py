@@ -10,12 +10,15 @@ from app.models.curriculum import Curriculum, KnowledgeBlock, ProgramStructure
 from app.models.enrollment import Enrollment
 from app.models.semester import Semester
 from app.models.user import User
+from tests.conftest import auth_headers
 
 
 def test_create_student_persists_all_business_fields(
     client: TestClient,
     db_session: Session,
+    seeded_entities: dict[str, object],
 ) -> None:
+    admin_user = seeded_entities["admin_user"]
     user = User(
         user_code="2699999",
         name="New Student",
@@ -36,7 +39,7 @@ def test_create_student_persists_all_business_fields(
         "ctxh_days": 14,
         "user_id": str(user.id),
     }
-    res = client.post("/api/v1/students/", json=payload)
+    res = client.post("/api/v1/students/", headers=auth_headers(admin_user), json=payload)
     assert res.status_code == status.HTTP_201_CREATED
     body = res.json()
     assert body["program"] == "high-quality"
@@ -90,7 +93,10 @@ def test_student_summary_excludes_exempted_english_from_gpa_and_detects_graduati
     db_session.add_all([e1, e2, e3])
     db_session.commit()
 
-    res = client.get(f"/api/v1/students/{student.student_id}/summary")
+    res = client.get(
+        f"/api/v1/students/{student.student_id}/summary",
+        headers=auth_headers(seeded_entities["student_user"]),
+    )
     assert res.status_code == status.HTTP_200_OK
     data = res.json()
 
@@ -147,8 +153,10 @@ def test_curriculum_detail_and_knowledge_block_category_filter(
     db_session.add(struct)
     db_session.commit()
 
+    headers = auth_headers(seeded_entities["student_user"])
+
     # Detail returns nested structures + knowledge_block
-    detail_res = client.get("/api/v1/curriculums/KHMT_K26")
+    detail_res = client.get("/api/v1/curriculums/KHMT_K26", headers=headers)
     assert detail_res.status_code == status.HTTP_200_OK
     detail = detail_res.json()
     assert detail["curriculum_id"] == "KHMT_K26"
@@ -157,12 +165,14 @@ def test_curriculum_detail_and_knowledge_block_category_filter(
     assert detail["structures"][0]["knowledge_block"]["block_id"] == "KB_CS_CORE"
 
     # Structures endpoint also includes knowledge_block
-    structs_res = client.get("/api/v1/curriculums/KHMT_K26/structures")
+    structs_res = client.get("/api/v1/curriculums/KHMT_K26/structures", headers=headers)
     assert structs_res.status_code == status.HTTP_200_OK
     assert structs_res.json()[0]["knowledge_block"]["category"] == "Core"
 
     # Knowledge blocks filter by category
-    kb_res = client.get("/api/v1/curriculums/knowledge-blocks", params={"category": "Core"})
+    kb_res = client.get(
+        "/api/v1/curriculums/knowledge-blocks", headers=headers, params={"category": "Core"}
+    )
     assert kb_res.status_code == status.HTTP_200_OK
     assert [b["block_id"] for b in kb_res.json()] == ["KB_CS_CORE"]
 
@@ -212,7 +222,10 @@ def test_student_summary_deduplicates_retaken_improved_courses_and_handles_null_
     db_session.add_all([e1, e2, e3])
     db_session.commit()
 
-    res = client.get(f"/api/v1/students/{student.student_id}/summary")
+    res = client.get(
+        f"/api/v1/students/{student.student_id}/summary",
+        headers=auth_headers(seeded_entities["student_user"]),
+    )
     assert res.status_code == status.HTTP_200_OK
     data = res.json()
     # Credits and passed count must NOT be double-counted (3 credits, 1 passed course, best GPA 4.0)

@@ -1,8 +1,8 @@
 import uuid
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.deps import CurrentUser, SessionDep
-from app.core.security import get_password_hash
+from app.api.deps import CurrentAdmin, CurrentUser, SessionDep
+from app.core.security import ROLE_ADMIN, get_password_hash
 from app.repositories import user_repo
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 
@@ -13,9 +13,10 @@ router = APIRouter()
     "/",
     response_model=list[UserResponse],
     status_code=status.HTTP_200_OK,
-    summary="List users with pagination and search",
+    summary="List users with pagination and search (Admin)",
 )
 def list_users(
+    current_admin: CurrentAdmin,
     db: SessionDep,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
@@ -36,9 +37,9 @@ def list_users(
     "/",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new user account",
+    summary="Create a new user account (Admin)",
 )
-def create_user(user_in: UserCreate, db: SessionDep):
+def create_user(user_in: UserCreate, current_admin: CurrentAdmin, db: SessionDep):
     """Register a new user account with hashed password."""
     existing_email = user_repo.get_by_email(db, user_in.email)
     if existing_email:
@@ -71,10 +72,15 @@ def get_user_me(current_user: CurrentUser):
     "/{user_id}",
     response_model=UserResponse,
     status_code=status.HTTP_200_OK,
-    summary="Get user profile by UUID",
+    summary="Get user profile by UUID (Admin or self)",
 )
-def get_user(user_id: uuid.UUID, db: SessionDep):
+def get_user(user_id: uuid.UUID, current_user: CurrentUser, db: SessionDep):
     """Retrieve detailed user account information."""
+    if current_user.role != ROLE_ADMIN and current_user.id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: you can only view your own user account",
+        )
     user = user_repo.get_by_id(db, user_id)
     if not user:
         raise HTTPException(
@@ -88,25 +94,62 @@ def get_user(user_id: uuid.UUID, db: SessionDep):
     "/{user_id}",
     response_model=UserResponse,
     status_code=status.HTTP_200_OK,
-    summary="Update user profile",
+    summary="Update user profile (Admin or self with restricted fields)",
 )
-def update_user(user_id: uuid.UUID, user_in: UserUpdate, db: SessionDep):
-    """Update details of an existing user."""
+def update_user(
+    user_id: uuid.UUID,
+    user_in: UserUpdate,
+    current_user: CurrentUser,
+    db: SessionDep,
+):
+    """Update details of an existing user with strict privilege-escalation guards."""
+    is_admin = current_user.role == ROLE_ADMIN
+    if not is_admin and current_user.id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: you can only update your own user account",
+        )
+
     user = user_repo.get_by_id(db, user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"User with ID '{user_id}' not found",
         )
+
     update_data = user_in.model_dump(exclude_unset=True)
-    raw_password = update_data.pop("password", None)
-    if raw_password:
-        update_data["password_hash"] = get_password_hash(raw_password)
 
     # Prevent overwriting non-nullable columns with explicit null
     for non_nullable in ("name", "email", "role"):
         if non_nullable in update_data and update_data[non_nullable] is None:
             update_data.pop(non_nullable)
+
+    # Non-admins cannot escalate role or change institutional email
+    if not is_admin:
+        if "role" in update_data and update_data["role"] != user.role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access forbidden: only administrators can change user roles",
+            )
+        update_data.pop("role", None)
+
+        if "email" in update_data and update_data["email"].strip().lower() != user.email.lower():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access forbidden: only administrators can change institutional email",
+            )
+        update_data.pop("email", None)
+    else:
+        # Prevent admin from self-demoting and locking themselves out
+        if user.id == current_user.id and "role" in update_data and update_data["role"] != ROLE_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Administrators cannot downgrade their own role",
+            )
+
+    raw_password = update_data.pop("password", None)
+    if raw_password:
+        update_data["password_hash"] = get_password_hash(raw_password)
 
     if "email" in update_data:
         normalized_email = update_data["email"].strip().lower()
@@ -124,10 +167,15 @@ def update_user(user_id: uuid.UUID, user_in: UserUpdate, db: SessionDep):
 @router.delete(
     "/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a user account",
+    summary="Delete a user account (Admin)",
 )
-def delete_user(user_id: uuid.UUID, db: SessionDep):
-    """Delete a user account by UUID."""
+def delete_user(user_id: uuid.UUID, current_admin: CurrentAdmin, db: SessionDep):
+    """Delete a user account by UUID (blocks admin self-deletion)."""
+    if user_id == current_admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Administrators cannot delete their own account",
+        )
     user = user_repo.get_by_id(db, user_id)
     if not user:
         raise HTTPException(

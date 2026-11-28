@@ -131,6 +131,8 @@ class AcademicClassRepository:
             update_data = obj_in.model_dump(exclude_unset=True)
 
         for field, value in update_data.items():
+            if field in {"class_group", "course_code", "semester_code"} and value is None:
+                continue
             setattr(db_obj, field, value)
 
         db.add(db_obj)
@@ -210,6 +212,31 @@ class AcademicClassRepository:
         )
         row = db.execute(statement).first()
         return dict(row._mapping) if row else None
+
+    def lecturer_teaches_student(
+        self,
+        db: Session,
+        *,
+        lecturer_id: str,
+        student_id: str,
+        course_code: str | None = None,
+        semester_code: str | None = None,
+    ) -> bool:
+        """Return True if the lecturer teaches (or taught) any class in which student is enrolled."""
+        statement = (
+            select(Enrollment.id)
+            .join(AcademicClass, Enrollment.class_id == AcademicClass.class_id)
+            .where(
+                AcademicClass.lecturer_id == lecturer_id,
+                Enrollment.student_id == student_id,
+            )
+            .limit(1)
+        )
+        if course_code:
+            statement = statement.where(AcademicClass.course_code == course_code)
+        if semester_code:
+            statement = statement.where(AcademicClass.semester_code == semester_code)
+        return db.scalar(statement) is not None
 
 
 academic_class_repo = AcademicClassRepository()

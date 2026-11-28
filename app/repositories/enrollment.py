@@ -432,6 +432,107 @@ class EnrollmentRepository:
 
         return history
 
+    def get_full_academic_summary(
+        self,
+        db: Session,
+        *,
+        student_id: str,
+    ) -> dict[str, Any]:
+        """Compute academic summary and per-semester GPA history in a single DB query."""
+        statement = (
+            select(
+                Enrollment.semester_code,
+                Enrollment.course_code,
+                Enrollment.gpa_4,
+                Enrollment.passed,
+                Enrollment.status,
+                Course.credits,
+            )
+            .join(Course, Enrollment.course_code == Course.course_code)
+            .where(Enrollment.student_id == student_id)
+            .order_by(Enrollment.semester_code)
+        )
+        records = db.execute(statement).all()
+
+        total_attempted_credits = 0
+        failed_count = 0
+        is_graduated = False
+        passed_by_course: dict[str, tuple[float | None, int]] = {}
+        semesters_data: dict[str, list[Any]] = {}
+
+        for record in records:
+            if record.status and record.status.lower() in {"dropped", "withdrawn"}:
+                continue
+
+            if record.credits > 0:
+                total_attempted_credits += record.credits
+                if record.passed:
+                    if record.course_code == "CO4337":
+                        is_graduated = True
+                    prev = passed_by_course.get(record.course_code)
+                    if prev is None:
+                        passed_by_course[record.course_code] = (record.gpa_4, record.credits)
+                    else:
+                        prev_gpa, prev_credits = prev
+                        if record.gpa_4 is not None and (prev_gpa is None or record.gpa_4 > prev_gpa):
+                            passed_by_course[record.course_code] = (record.gpa_4, record.credits)
+                        elif prev_credits < record.credits:
+                            passed_by_course[record.course_code] = (prev_gpa, record.credits)
+                elif record.passed is False:
+                    failed_count += 1
+
+            if record.semester_code:
+                semesters_data.setdefault(record.semester_code, []).append(record)
+
+        total_passed_credits = sum(creds for _, creds in passed_by_course.values())
+        passed_count = len(passed_by_course)
+        weighted_passed_points = sum(
+            gpa * creds for gpa, creds in passed_by_course.values() if gpa is not None
+        )
+        total_graded_passed_credits = sum(
+            creds for gpa, creds in passed_by_course.values() if gpa is not None
+        )
+        cumulative_gpa = (
+            round(weighted_passed_points / total_graded_passed_credits, 2)
+            if total_graded_passed_credits > 0
+            else 0.0
+        )
+
+        semester_gpas: list[dict[str, Any]] = []
+        for sem_code in sorted(semesters_data.keys()):
+            sem_records = semesters_data[sem_code]
+            attempted_credits = sum(r.credits for r in sem_records if r.credits > 0)
+            passed_credits = sum(r.credits for r in sem_records if r.passed and r.credits > 0)
+            graded_records = [r for r in sem_records if r.gpa_4 is not None and r.credits > 0]
+            term_points = sum(r.gpa_4 * r.credits for r in graded_records)
+            term_graded_credits = sum(r.credits for r in graded_records)
+            semester_gpa = (
+                round(term_points / term_graded_credits, 2)
+                if term_graded_credits > 0
+                else 0.0
+            )
+            semester_gpas.append(
+                {
+                    "semester_code": sem_code,
+                    "gpa": semester_gpa,
+                    "semester_gpa": semester_gpa,
+                    "attempted_credits": attempted_credits,
+                    "passed_credits": passed_credits,
+                    "courses_count": len(sem_records),
+                }
+            )
+
+        return {
+            "student_id": student_id,
+            "cumulative_gpa": cumulative_gpa,
+            "total_passed_credits": total_passed_credits,
+            "total_attempted_credits": total_attempted_credits,
+            "passed_courses_count": passed_count,
+            "failed_courses_count": failed_count,
+            "is_graduated": is_graduated,
+            "semester_gpas": semester_gpas,
+        }
+
     def is_student_graduated(self, db: Session, *, student_id: str) -> bool:
         """Check whether a student has successfully passed the graduation thesis (CO4337)."""
         statement = (
